@@ -5,18 +5,18 @@
 
 ## Phases
 
-- [ ] Phase 1: Research
-  - [ ] 1.1 Изучить существующие решения (evil-mc, multiple-cursors.el)
-  - [ ] 1.2 Изучить как evil-mc реализует курсоры и overlays
-  - [ ] 1.3 Понять как работает undo/redo в Emacs для интеграции
-  - [ ] 1.4 Изучить API evil-surround для интеграции
+- [x] Phase 1: Research
+  - [x] 1.1 Изучить существующие решения (evil-mc, multiple-cursors.el)
+  - [x] 1.2 Изучить как evil-mc реализует курсоры и overlays
+  - [x] 1.3 Понять как работает undo/redo в Emacs для интеграции
+  - [x] 1.4 Изучить API evil-surround для интеграции
 
-- [ ] Phase 2: Design
-  - [ ] 2.1 Спроектировать структуру данных для курсоров и регионов
-  - [ ] 2.2 Спроектировать VM Registers
-  - [ ] 2.3 Спроектировать систему режимов (cursor/extend)
-  - [ ] 2.4 Определить keybindings
-  - [ ] 2.5 Спроектировать визуальное отображение (faces, overlays)
+- [x] Phase 2: Design
+  - [x] 2.1 Спроектировать структуру данных для курсоров и регионов
+  - [x] 2.2 Спроектировать VM Registers
+  - [x] 2.3 Спроектировать систему режимов (cursor/extend)
+  - [x] 2.4 Определить keybindings
+  - [x] 2.5 Спроектировать визуальное отображение (faces, overlays)
 
 - [ ] Phase 3: Core Implementation
   - [ ] 3.1 Базовая структура пакета (evm.el — evil-visual-multi)
@@ -78,7 +78,12 @@
 - Hydra/Transient меню — нет (отложили)
 
 ## Status
-**Phase 1** — Готовимся к исследованию существующих решений
+**Phase 2** — ЗАВЕРШЕНО. Детальный дизайн записан в `architecture.md`:
+- Структуры данных: evm-region, evm-state, evm-snapshot
+- VM Registers: хранение, операции (yank/delete/paste/change)
+- Система режимов: cursor/extend с переходами и поведением
+- Keybindings: 4 keymap-а (global, common, cursor, extend)
+- Visual Display: faces, overlays, mode-line indicator
 
 ## Files
 - `task_plan.md` — этот файл
