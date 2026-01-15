@@ -1,0 +1,11 @@
+# Reference projects
+vim-visual-multi/
+
+# Emacs
+*.elc
+*~
+\#*\#
+.#*
+
+# OS
+.DS_Store
