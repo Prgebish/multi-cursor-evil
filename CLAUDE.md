@@ -22,28 +22,40 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Verification Commands
 
-После изменений кода запускать:
+После изменений кода **ОБЯЗАТЕЛЬНО** запускать тесты:
 
 ```bash
-# Проверка синтаксиса elisp (batch mode)
-emacs -Q --batch -f batch-byte-compile *.el
+# Запуск всех тестов (ОБЯЗАТЕЛЬНО после любых изменений!)
+make test
 
-# Запуск тестов (когда будут)
-emacs -Q --batch -l ert -l test/evm-test.el -f ert-run-tests-batch-and-exit
+# Или напрямую:
+emacs -Q --batch -L . -l ert -l test/evm-test.el -f ert-run-tests-batch-and-exit
+```
+
+**CRITICAL:** Все тесты должны проходить (`make test`) перед завершением работы над кодом. Не заканчивать редактирование пока тесты не зелёные!
+
+**IMPORTANT:** После каждого успешного исправления бага или добавления фичи — ОБЯЗАТЕЛЬНО писать тесты, покрывающие новое поведение.
+
+Дополнительные команды:
+
+```bash
+# Byte-compile (проверка синтаксиса)
+make compile
 
 # Загрузить в работающий Emacs (через emacs server)
 emacsclient -e "(load-file \"evm.el\")"
 
 # Перезагрузить модуль после изменений
-emacsclient -e "(progn (unload-feature 'evm t) (require 'evm))"
+emacsclient -e "(progn (unload-feature 'evm t) (unload-feature 'evm-core t) (require 'evm))"
 
-# Проверить что пакет загружен
-emacsclient -e "(featurep 'evm)"
+# Интерактивное тестирование в реальном Emacs
+make test-interactive
 ```
 
-**IMPORTANT:** Всегда запускать верификацию после изменений кода.
-
-Предпочтительный способ — через `emacsclient`, так как тестирование происходит в реальном окружении с evil и другими пакетами.
+Предпочтительный способ разработки:
+1. Редактировать код
+2. `make test` — убедиться что тесты проходят
+3. `emacsclient` — проверить в реальном окружении с evil
 
 ## Planning Files
 
@@ -62,3 +74,7 @@ emacsclient -e "(featurep 'evm)"
 ## Reference
 
 Оригинальный плагин vim-visual-multi находится в `vim-visual-multi/` для справки.
+
+## User Environment
+
+Конфигурация Emacs пользователя: `~/.emacs.d/init.el` — можно смотреть для понимания как загружается evm и какие другие пакеты установлены.

@@ -18,12 +18,12 @@
   - [x] 2.4 Определить keybindings
   - [x] 2.5 Спроектировать визуальное отображение (faces, overlays)
 
-- [ ] Phase 3: Core Implementation
-  - [ ] 3.1 Базовая структура пакета (evm.el — evil-visual-multi)
-  - [ ] 3.2 Система курсоров и overlays
-  - [ ] 3.3 Cursor mode — базовые операции
-  - [ ] 3.4 Extend mode — базовые операции
-  - [ ] 3.5 Переключение между режимами
+- [x] Phase 3: Core Implementation
+  - [x] 3.1 Базовая структура пакета (evm.el — evil-visual-multi)
+  - [x] 3.2 Система курсоров и overlays
+  - [x] 3.3 Cursor mode — базовые операции
+  - [x] 3.4 Extend mode — базовые операции
+  - [x] 3.5 Переключение между режимами
 
 - [ ] Phase 4: Cursor Creation
   - [ ] 4.1 Find Word (C-n)
@@ -78,12 +78,14 @@
 - Hydra/Transient меню — нет (отложили)
 
 ## Status
-**Phase 2** — ЗАВЕРШЕНО. Детальный дизайн записан в `architecture.md`:
-- Структуры данных: evm-region, evm-state, evm-snapshot
-- VM Registers: хранение, операции (yank/delete/paste/change)
-- Система режимов: cursor/extend с переходами и поведением
-- Keybindings: 4 keymap-а (global, common, cursor, extend)
-- Visual Display: faces, overlays, mode-line indicator
+**Phase 3** — ЗАВЕРШЕНО. Реализовано:
+- `evm-core.el` — структуры данных, overlays, базовые операции
+- `evm.el` — entry point, keymaps, minor mode, команды
+- Cursor mode: движение, i/a/I/A/o/O, x/X/r/~
+- Extend mode: y/d/c/p/P, U/u/~, o (flip)
+- Переключение режимов: Tab
+- Navigation: ]/[ между курсорами, q/Q удаление
+- Поиск: C-n (find word), n/N, \\A (select all)
 
 ## Files
 - `task_plan.md` — этот файл
