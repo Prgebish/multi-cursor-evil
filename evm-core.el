@@ -347,6 +347,19 @@ Returns the created region."
       (marker-position (evm-region-end region))
     (marker-position (evm-region-beg region))))
 
+(defun evm--region-visual-cursor-pos (region)
+  "Get visual cursor position within REGION.
+In extend mode with dir=1, cursor is ON the last char (end-1), not after.
+This is used for positioning the actual Emacs point."
+  (if (= (evm-region-dir region) 1)
+      (if (evm-extend-mode-p)
+          ;; In extend mode, cursor is ON the last character (like evil visual)
+          (max (marker-position (evm-region-beg region))
+               (1- (marker-position (evm-region-end region))))
+        ;; In cursor mode, beg=end anyway
+        (marker-position (evm-region-end region)))
+    (marker-position (evm-region-beg region))))
+
 (defun evm--region-set-cursor-pos (region pos)
   "Set cursor position in REGION to POS.
 In cursor mode: moves the whole region.

@@ -334,7 +334,7 @@
     (evm-find-next)
     ;; Already in extend mode with "foo" selected
     (evm-yank)
-    (let ((contents (gethash ?\" (evm-state-registers evm--state))))
+    (let ((contents (gethash ?" (evm-state-registers evm--state))))
       (should contents)
       (should (= (length contents) 2))
       (should (string= (car contents) "foo")))))
@@ -652,6 +652,41 @@
     (evm-find-next)
     ;; Should still be 1, no other foo
     (should (= (evm-region-count) 1))))
+
+;;; Undo resync tests
+
+(ert-deftest evm-test-resync-after-undo ()
+  "Regions should be resynced to pattern matches after undo."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; Two regions at positions 1 and 9
+    (should (= (evm-region-count) 2))
+    (should (equal (evm-test-positions) '(1 9)))
+    ;; Simulate undo resync by calling the function directly
+    ;; (actual undo test would require more complex setup)
+    (evm--resync-regions-to-pattern)
+    ;; Positions should remain consistent
+    (should (equal (evm-test-positions) '(1 9)))
+    ;; All regions should have correct end positions (foo = 3 chars)
+    (should (equal (evm-test-end-positions) '(4 12)))))
+
+(ert-deftest evm-test-resync-cursor-mode ()
+  "Regions in cursor mode should resync to end of match."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; Switch to cursor mode - cursors collapse to end (4 and 12)
+    (evm-toggle-mode)
+    (should (evm-cursor-mode-p))
+    (should (equal (evm-test-positions) '(4 12)))
+    
+    ;; Run resync
+    (evm--resync-regions-to-pattern)
+    
+    ;; Should still be at end (4 and 12)
+    ;; Prior to fix, this would move them to start (1 and 9)
+    (should (equal (evm-test-positions) '(4 12)))))
 
 (provide 'evm-test)
 ;;; evm-test.el ends here

@@ -171,6 +171,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (evm-mode 1)
   (evil-normal-state)
   ;; Add hooks
+  (add-hook 'pre-command-hook #'evm--pre-command nil t)
   (add-hook 'post-command-hook #'evm--post-command nil t)
   (add-hook 'before-change-functions #'evm--before-change nil t)
   (add-hook 'after-change-functions #'evm--after-change nil t)
@@ -188,6 +189,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
     (evm--remove-all-overlays)
     (evm--hide-match-preview)
     ;; Remove hooks
+    (remove-hook 'pre-command-hook #'evm--pre-command t)
     (remove-hook 'post-command-hook #'evm--post-command t)
     (remove-hook 'before-change-functions #'evm--before-change t)
     (remove-hook 'after-change-functions #'evm--after-change t)
@@ -333,14 +335,56 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
         (when (> anchor max-pos)
           (set-marker (evm-region-anchor region) max-pos))))))
 
+(defvar evm--last-buffer-tick nil
+  "Buffer tick before last command, used to detect undo.")
+
+(defun evm--pre-command ()
+  "Called before each command."
+  (when (evm-active-p)
+    (setq evm--last-buffer-tick (buffer-modified-tick))))
+
 (defun evm--post-command ()
   "Called after each command."
   (when (evm-active-p)
-    ;; Keep real cursor at leader position
+    ;; After undo (buffer tick decreased), resync regions with pattern
+    (when (and evm--last-buffer-tick
+               (< (buffer-modified-tick) evm--last-buffer-tick)
+               (car (evm-state-patterns evm--state)))
+      (evm--resync-regions-to-pattern))
+    ;; Keep real cursor at leader visual position
+    ;; In extend mode, this is on the last selected char (end-1), not after
     (when-let ((leader (evm--leader-region)))
-      (let ((leader-pos (evm--region-cursor-pos leader)))
+      (let ((leader-pos (evm--region-visual-cursor-pos leader)))
         (unless (= (point) leader-pos)
           (goto-char leader-pos))))))
+
+(defun evm--resync-regions-to-pattern ()
+  "Resync region positions to match pattern occurrences in buffer.
+Called after undo to fix marker drift."
+  (let* ((pattern (car (evm-state-patterns evm--state)))
+         (num-regions (evm-region-count))
+         (matches '())
+         (cursor-mode-p (evm-cursor-mode-p)))
+    ;; Find all matches
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward pattern nil t)
+        (push (cons (match-beginning 0) (match-end 0)) matches)))
+    (setq matches (nreverse matches))
+    ;; If same number of matches as regions, update positions
+    (when (= (length matches) num-regions)
+      (let ((sorted-regions (cl-sort (copy-sequence (evm-state-regions evm--state))
+                                     #'< :key (lambda (r) (marker-position (evm-region-beg r))))))
+        (cl-loop for region in sorted-regions
+                 for match in matches
+                 do (let ((beg (if cursor-mode-p (cdr match) (car match)))
+                          (end (cdr match))
+                          (anchor (if cursor-mode-p (cdr match) (car match))))
+                      (set-marker (evm-region-beg region) beg)
+                      (set-marker (evm-region-end region) end)
+                      (set-marker (evm-region-anchor region) anchor)
+                      (setf (evm-region-dir region) 1)))
+        (evm--update-all-overlays)))))
 
 ;;; Movement commands
 
