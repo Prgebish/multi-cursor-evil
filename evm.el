@@ -267,14 +267,14 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (evm--move-cursors #'evm--move-char -1))
 
 (defun evm-next-line ()
-  "Move all cursors to next line."
+  "Move all cursors to next line, preserving column."
   (interactive)
-  (evm--move-cursors #'evm--move-line 1))
+  (evm--move-cursors-vertically 1))
 
 (defun evm-previous-line ()
-  "Move all cursors to previous line."
+  "Move all cursors to previous line, preserving column."
   (interactive)
-  (evm--move-cursors #'evm--move-line -1))
+  (evm--move-cursors-vertically -1))
 
 (defun evm-forward-word ()
   "Move all cursors forward one word."

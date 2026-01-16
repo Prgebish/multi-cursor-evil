@@ -346,6 +346,79 @@
     (should-not (evm-active-p))
     (should-not evm-mode)))
 
+;;; Vertical movement with vcol tests
+
+(ert-deftest evm-test-j-k-preserves-column ()
+  "j then k should return cursors to original positions."
+  ;; Buffer with 4 lines so all cursors can move down and back
+  (evm-test-with-buffer "abcdefgh\nxy\nabcdefgh\nlast"
+    ;; Buffer layout:
+    ;; Line 1: pos 1-8 "abcdefgh", pos 9 \n
+    ;; Line 2: pos 10-11 "xy", pos 12 \n
+    ;; Line 3: pos 13-20 "abcdefgh", pos 21 \n
+    ;; Line 4: pos 22-25 "last"
+    ;; Create cursors at column 5 on lines 1 and 3, column 1 on line 2
+    (goto-char 6)  ; 'f' on line 1 (column 5)
+    (evm-activate)
+    (evm--create-region 6 6)   ; line 1, column 5 ('f')
+    (evm--create-region 11 11) ; line 2, column 1 ('y')
+    (evm--create-region 18 18) ; line 3, column 5 ('f')
+    ;; Now we have 3 cursors at (6, 11, 18)
+    (should (= (evm-region-count) 3))
+    (should (equal (evm-test-positions) '(6 11 18)))
+    ;; Record positions before j
+    (let ((positions-before (evm-test-positions)))
+      ;; Move down (j)
+      (evm-next-line)
+      ;; Positions should have changed (went down)
+      (should-not (equal (evm-test-positions) positions-before))
+      ;; Move up (k)
+      (evm-previous-line)
+      ;; Positions should be restored
+      (should (equal (evm-test-positions) positions-before)))))
+
+(ert-deftest evm-test-j-k-short-line-vcol ()
+  "j/k across short line should preserve desired column."
+  (evm-test-with-buffer "abcdefghij\n\nabcdefghij"
+    ;; Start at column 5 on line 1
+    (goto-char 6)
+    (evm-activate)
+    (evm--create-region (point) (point))
+    ;; j - go to empty line (column 0 since line is empty)
+    (evm-next-line)
+    ;; j again - go to line 3, should be at column 5 again
+    (evm-next-line)
+    (should (= (current-column) 5))
+    ;; k twice - should go back to line 1 at column 5
+    (evm-previous-line)
+    (evm-previous-line)
+    (should (= (current-column) 5))))
+
+(ert-deftest evm-test-horizontal-movement-clears-vcol ()
+  "Horizontal movement should clear vcol."
+  (evm-test-with-buffer "abcdefghij\n\nabcdefghij"
+    ;; Start at column 5
+    (goto-char 6)
+    (evm-activate)
+    (evm--create-region (point) (point))
+    ;; j - to empty line (vcol=5 saved)
+    (evm-next-line)
+    ;; l - move right (should clear vcol, but we're on empty line so stays at 0)
+    ;; Actually on empty line l doesn't move
+    ;; Move back up first
+    (evm-previous-line)
+    (should (= (current-column) 5))
+    ;; Now l should clear vcol
+    (evm-forward-char)
+    (should (= (current-column) 6))
+    ;; j and k should now use column 6
+    (evm-next-line)
+    (evm-next-line)
+    (should (= (current-column) 6))
+    (evm-previous-line)
+    (evm-previous-line)
+    (should (= (current-column) 6))))
+
 ;;; Edge cases
 
 (ert-deftest evm-test-no-word-at-point ()

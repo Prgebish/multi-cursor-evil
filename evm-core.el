@@ -403,13 +403,34 @@ In extend mode: moves the active end."
 
 (defun evm--move-cursors (motion-fn &rest args)
   "Move all cursors using MOTION-FN with ARGS.
-MOTION-FN should move point and return new position."
+MOTION-FN should move point and return new position.
+This clears vcol for all regions (horizontal movement)."
   (let ((positions '()))
     ;; Calculate new positions
     (dolist (region (evm-state-regions evm--state))
+      ;; Clear vcol on horizontal movement
+      (setf (evm-region-vcol region) nil)
       (save-excursion
         (goto-char (evm--region-cursor-pos region))
         (apply motion-fn args)
+        (push (cons region (point)) positions)))
+    ;; Apply new positions (in reverse to not affect markers)
+    (dolist (pos-pair (nreverse positions))
+      (evm--region-set-cursor-pos (car pos-pair) (cdr pos-pair))))
+  ;; Move real point to leader position
+  (when-let ((leader (evm--leader-region)))
+    (goto-char (evm--region-cursor-pos leader)))
+  (evm--update-all-overlays))
+
+(defun evm--move-cursors-vertically (count)
+  "Move all cursors COUNT lines vertically, preserving each cursor's column.
+Uses vcol to remember the desired column across short lines."
+  (let ((positions '()))
+    ;; Calculate new positions using each region's vcol
+    (dolist (region (evm-state-regions evm--state))
+      (save-excursion
+        (goto-char (evm--region-cursor-pos region))
+        (evm--move-line-for-region region count)
         (push (cons region (point)) positions)))
     ;; Apply new positions (in reverse to not affect markers)
     (dolist (pos-pair (nreverse positions))
@@ -424,10 +445,13 @@ MOTION-FN should move point and return new position."
   (let ((target (+ (point) count)))
     (goto-char (max (point-min) (min target (point-max))))))
 
-(defun evm--move-line (count)
-  "Move COUNT lines."
-  (let ((col (or (evm-region-vcol (evm--leader-region))
-                 (current-column))))
+(defun evm--move-line-for-region (region count)
+  "Move COUNT lines using REGION's vcol.
+This function is called with point already at the region's cursor position."
+  ;; Set vcol if not already set (first j/k in a sequence)
+  (unless (evm-region-vcol region)
+    (setf (evm-region-vcol region) (current-column)))
+  (let ((col (evm-region-vcol region)))
     (forward-line count)
     (move-to-column col)))
 
