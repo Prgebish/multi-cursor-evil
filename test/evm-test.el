@@ -521,6 +521,42 @@
     (evm-end-of-line)
     (should (equal (evm-test-positions) '(5)))))
 
+(ert-deftest evm-test-end-of-line-extend-mode ()
+  "$ in extend mode should extend selection to end of line."
+  ;; Buffer: "text abc\ntext xyz" (17 chars + newline = 18 total)
+  ;; Line 1: "text abc" pos 1-8, newline at 9
+  ;; Line 2: "text xyz" pos 10-17, point-max = 18
+  (evm-test-with-buffer "text abc\ntext xyz"
+    ;; text at pos 1-5 and 10-14
+    (evm-find-word)  ; selects first "text"
+    (evm-find-next)  ; adds second "text"
+    (should (= (evm-region-count) 2))
+    ;; In extend mode, both "text" are selected (beg-end pairs)
+    ;; After $, selection should extend to end of each line
+    (evm-end-of-line)
+    ;; line-end-position returns:
+    ;; - Line 1: 9 (position of newline)
+    ;; - Line 2: 18 (point-max, since no trailing newline)
+    ;; Visual cursor will be on 8 ('c') and 17 ('z') respectively
+    (should (equal (evm-test-end-positions) '(9 18)))))
+
+(ert-deftest evm-test-end-of-line-extend-mode-different-lengths ()
+  "$ in extend mode should work with lines of different lengths."
+  ;; Buffer: "aa short\naa very long line here" (31 chars total)
+  ;; Line 1: "aa short" pos 1-8, newline at 9
+  ;; Line 2: "aa very long line here" pos 10-31, point-max = 32
+  (evm-test-with-buffer "aa short\naa very long line here"
+    ;; "aa" at pos 1-3 and 10-12
+    (evm-find-word)
+    (evm-find-next)
+    (should (= (evm-region-count) 2))
+    (evm-end-of-line)
+    ;; line-end-position returns:
+    ;; - Line 1: 9 (position of newline)
+    ;; - Line 2: 32 (point-max, since no trailing newline)
+    ;; Visual cursor will be on 8 ('t') and 31 ('e') respectively
+    (should (equal (evm-test-end-positions) '(9 32)))))
+
 ;;; Insert mode tests
 
 (ert-deftest evm-test-insert-replicates-text ()

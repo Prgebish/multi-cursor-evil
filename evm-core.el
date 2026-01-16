@@ -494,14 +494,18 @@ This function is called with point already at the region's cursor position."
   (beginning-of-line))
 
 (defun evm--move-line-end ()
-  "Move to end of line (last character, like evil $)."
+  "Move to end of line.
+In cursor mode: go to last character (like evil $).
+In extend mode: go to eol so visual cursor lands on last char."
   (let ((eol (line-end-position))
         (bol (line-beginning-position)))
     (if (= bol eol)
-        ;; Empty line - go to beginning of line
+        ;; Empty line - stay at beginning
         (goto-char bol)
-      ;; Go to last character (not past it), like evil normal state $
-      (goto-char (1- eol)))))
+      ;; In extend mode, end marker is exclusive, so go to eol
+      ;; to have visual cursor on (1- eol) = last char.
+      ;; In cursor mode, go directly to last char.
+      (goto-char (if (evm-extend-mode-p) eol (1- eol))))))
 
 (defun evm--move-first-non-blank ()
   "Move to first non-blank character."
