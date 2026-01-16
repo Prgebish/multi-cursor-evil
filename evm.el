@@ -216,6 +216,94 @@ Uses `emulation-mode-map-alists' to override evil bindings."
 (defvar evm--in-change nil
   "Flag to track when we're in the middle of a change.")
 
+;;; Insert mode tracking (real-time replication)
+
+(defvar-local evm--insert-active nil
+  "Non-nil when evm insert mode is active.")
+
+(defvar-local evm--insert-replicating nil
+  "Non-nil when we are replicating changes to other cursors.
+Used to prevent infinite recursion.")
+
+(defvar-local evm--insert-last-point nil
+  "Last known point position during insert mode.")
+
+(defun evm--start-insert-mode ()
+  "Start tracking for evm insert mode with real-time replication."
+  (when (and (evm-active-p) (not evm--insert-active))
+    (setq evm--insert-active t
+          evm--insert-replicating nil
+          evm--insert-last-point (point))
+    ;; Disable evm keymaps during insert mode (let evil handle input)
+    (setq evm--emulation-alist nil)
+    (when-let ((entry (assq 'evm-mode minor-mode-map-alist)))
+      (setcdr entry nil))
+    ;; Add hooks for real-time replication
+    (add-hook 'after-change-functions #'evm--insert-after-change nil t)
+    (add-hook 'evil-insert-state-exit-hook #'evm--stop-insert-mode nil t)))
+
+(defun evm--insert-after-change (beg end old-len)
+  "Replicate changes at leader to all other cursors in real-time.
+BEG and END are the changed region, OLD-LEN is length of replaced text."
+  (when (and evm--insert-active
+             (not evm--insert-replicating)
+             (evm-active-p))
+    (let* ((leader (evm--leader-region))
+           (leader-pos (when leader (marker-position (evm-region-beg leader))))
+           (new-len (- end beg))
+           (delta (- new-len old-len)))
+      ;; Only replicate if the change is near the leader cursor
+      (when (and leader-pos
+                 ;; Change must be at or before current leader position
+                 (<= beg (+ leader-pos (max 0 (- old-len)))))
+        (let ((evm--insert-replicating t)
+              (inhibit-modification-hooks t))
+          ;; Get the inserted/changed text (or nil for pure deletion)
+          (let ((new-text (when (> new-len 0)
+                            (buffer-substring-no-properties beg end)))
+                (other-regions (cl-remove-if #'evm--leader-p
+                                             (evm-state-regions evm--state))))
+            ;; Apply to other regions from end to beginning
+            (dolist (region (cl-sort (copy-sequence other-regions) #'>
+                                     :key (lambda (r) (marker-position (evm-region-beg r)))))
+              (let ((region-pos (marker-position (evm-region-beg region))))
+                (save-excursion
+                  (goto-char region-pos)
+                  ;; Delete old text if any
+                  (when (> old-len 0)
+                    (delete-char (- (min old-len (- (point-max) (point))))))
+                  ;; Insert new text if any
+                  (when new-text
+                    (insert new-text))
+                  ;; Update marker to current position
+                  (set-marker (evm-region-beg region) (point))
+                  (set-marker (evm-region-end region) (point))
+                  (set-marker (evm-region-anchor region) (point))))))
+          ;; Update leader marker position too
+          (set-marker (evm-region-beg leader) (point))
+          (set-marker (evm-region-end leader) (point))
+          (set-marker (evm-region-anchor leader) (point))
+          ;; Update overlays to show new positions
+          (evm--update-all-overlays))
+        ;; Update last point
+        (setq evm--insert-last-point (point))))))
+
+(defun evm--stop-insert-mode ()
+  "Handle exit from evm insert mode."
+  (when (and evm--insert-active (evm-active-p))
+    ;; Remove hooks
+    (remove-hook 'after-change-functions #'evm--insert-after-change t)
+    (remove-hook 'evil-insert-state-exit-hook #'evm--stop-insert-mode t)
+    (setq evm--insert-active nil
+          evm--insert-replicating nil
+          evm--insert-last-point nil)
+    ;; Update overlays
+    (evm--update-all-overlays)
+    ;; Restore evm keymaps
+    (when-let ((entry (assq 'evm-mode minor-mode-map-alist)))
+      (setcdr entry evm-mode-map))
+    (evm--update-keymap)))
+
 (defun evm--before-change (_beg _end)
   "Called before buffer modification."
   (when (and (evm-active-p) (not evm--in-change))
@@ -549,6 +637,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (interactive)
   (when (evm-cursor-mode-p)
     (evm--push-undo-snapshot)
+    (evm--start-insert-mode)
     (evil-insert-state)))
 
 (defun evm-append ()
@@ -557,6 +646,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (when (evm-cursor-mode-p)
     (evm--push-undo-snapshot)
     (evm--move-cursors #'forward-char 1)
+    (evm--start-insert-mode)
     (evil-insert-state)))
 
 (defun evm-insert-line ()
@@ -565,6 +655,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (when (evm-cursor-mode-p)
     (evm--push-undo-snapshot)
     (evm--move-cursors #'back-to-indentation)
+    (evm--start-insert-mode)
     (evil-insert-state)))
 
 (defun evm-append-line ()
@@ -573,6 +664,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (when (evm-cursor-mode-p)
     (evm--push-undo-snapshot)
     (evm--move-cursors #'end-of-line)
+    (evm--start-insert-mode)
     (evil-insert-state)))
 
 (defun evm-open-below ()
@@ -583,7 +675,9 @@ Uses `emulation-mode-map-alists' to override evil bindings."
     (evm--execute-at-all-cursors
      (lambda ()
        (end-of-line)
-       (newline-and-indent)))
+       (newline-and-indent))
+     t)  ; update-markers = t
+    (evm--start-insert-mode)
     (evil-insert-state)))
 
 (defun evm-open-above ()
@@ -596,7 +690,9 @@ Uses `emulation-mode-map-alists' to override evil bindings."
        (beginning-of-line)
        (newline)
        (forward-line -1)
-       (indent-according-to-mode)))
+       (indent-according-to-mode))
+     t)  ; update-markers = t
+    (evm--start-insert-mode)
     (evil-insert-state)))
 
 (defun evm-delete-char ()
@@ -687,6 +783,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (interactive)
   (when (evm-extend-mode-p)
     (evm-delete)
+    (evm--start-insert-mode)
     (evil-insert-state)))
 
 (defun evm-paste-after ()
@@ -809,14 +906,24 @@ Uses `emulation-mode-map-alists' to override evil bindings."
 
 ;;; Helper functions
 
-(defun evm--execute-at-all-cursors (fn)
+(defun evm--execute-at-all-cursors (fn &optional update-markers)
   "Execute FN at all cursor positions.
-FN is called with point at each cursor, from end to beginning."
+FN is called with point at each cursor, from end to beginning.
+If UPDATE-MARKERS is non-nil, update each cursor's marker to point
+after FN completes (useful for commands like o/O that move point)."
   (let ((regions (reverse (evm-state-regions evm--state))))
     (dolist (region regions)
-      (save-excursion
-        (goto-char (evm--region-cursor-pos region))
-        (funcall fn))))
+      (if update-markers
+          ;; Don't use save-excursion - we want to capture the new position
+          (progn
+            (goto-char (evm--region-cursor-pos region))
+            (funcall fn)
+            ;; Update marker to new position
+            (evm--region-set-cursor-pos region (point)))
+        ;; Original behavior with save-excursion
+        (save-excursion
+          (goto-char (evm--region-cursor-pos region))
+          (funcall fn)))))
   (evm--update-all-overlays)
   ;; Move to leader
   (when-let ((leader (evm--leader-region)))

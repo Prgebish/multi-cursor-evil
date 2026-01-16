@@ -450,6 +450,116 @@
     (evm-end-of-line)
     (should (equal (evm-test-positions) '(5)))))
 
+;;; Insert mode tests
+
+(ert-deftest evm-test-insert-replicates-text ()
+  "i should insert text at all cursor positions."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; Cursors at 1 and 9
+    (should (equal (evm-test-positions) '(1 9)))
+    ;; Enter insert mode
+    (evm-insert)
+    ;; Insert text
+    (insert "X")
+    ;; Exit insert mode
+    (evil-normal-state)
+    ;; Text should be inserted at both positions
+    (should (string= (buffer-string) "Xfoo bar Xfoo"))))
+
+(ert-deftest evm-test-insert-multiple-chars ()
+  "i should insert multiple characters at all cursor positions."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (evm-insert)
+    (insert "hello")
+    (evil-normal-state)
+    (should (string= (buffer-string) "hellofoo bar hellofoo"))))
+
+(ert-deftest evm-test-append-replicates-text ()
+  "a should append text after all cursor positions."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; Cursors at 1 and 9
+    (evm-append)
+    (insert "X")
+    (evil-normal-state)
+    ;; Text should be inserted after first char at each position
+    (should (string= (buffer-string) "fXoo bar fXoo"))))
+
+(ert-deftest evm-test-insert-line ()
+  "I should insert at beginning of line for all cursors."
+  (evm-test-with-buffer "  foo\n  bar"
+    ;; Create cursors on both lines using C-Down
+    (evm-add-cursor-down)
+    (evm-insert-line)
+    (insert "X")
+    (evil-normal-state)
+    ;; X should be at beginning of indentation on each line
+    (should (string= (buffer-string) "  Xfoo\n  Xbar"))))
+
+(ert-deftest evm-test-append-line ()
+  "A should append at end of line for all cursors."
+  (evm-test-with-buffer "foo\nbar"
+    ;; Create cursors on both lines using C-Down
+    (evm-add-cursor-down)
+    (evm-append-line)
+    (insert "X")
+    (evil-normal-state)
+    (should (string= (buffer-string) "fooX\nbarX"))))
+
+(ert-deftest evm-test-insert-same-line-multiple ()
+  "i should work correctly with multiple cursors on same line."
+  (evm-test-with-buffer "foo foo foo"
+    (evm-find-word)
+    (evm-find-next)
+    (evm-find-next)
+    (evm-insert)
+    (insert "X")
+    (evil-normal-state)
+    (should (string= (buffer-string) "Xfoo Xfoo Xfoo"))))
+
+(ert-deftest evm-test-insert-leader-middle ()
+  "i should work when leader is in the middle of cursor list."
+  (evm-test-with-buffer "foo bar foo baz foo"
+    (evm-find-word)
+    (evm-find-next)
+    (evm-find-next)
+    (evm-goto-prev) ;; move leader to middle
+    (evm-insert)
+    (insert "X")
+    (evil-normal-state)
+    (should (string= (buffer-string) "Xfoo bar Xfoo baz Xfoo"))))
+
+(ert-deftest evm-test-open-below ()
+  "o should open line below and insert at all cursors."
+  (evm-test-with-buffer "line1\nline2\nline3"
+    ;; Create cursors on all three lines
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    ;; Open below
+    (evm-open-below)
+    (insert "new")
+    (evil-normal-state)
+    (should (string= (buffer-string) "line1\nnew\nline2\nnew\nline3\nnew"))))
+
+(ert-deftest evm-test-open-above ()
+  "O should open line above and insert at all cursors."
+  (evm-test-with-buffer "line1\nline2\nline3"
+    ;; Create cursors on all three lines
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    ;; Open above
+    (evm-open-above)
+    (insert "above")
+    (evil-normal-state)
+    (should (string= (buffer-string) "above\nline1\nabove\nline2\nabove\nline3"))))
+
 ;;; Edge cases
 
 (ert-deftest evm-test-no-word-at-point ()
