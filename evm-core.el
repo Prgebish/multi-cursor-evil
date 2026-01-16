@@ -71,6 +71,14 @@
   "Face for potential matches (pattern preview)."
   :group 'evm)
 
+(defface evm-restrict-face
+  '((((class color) (background dark))
+     :background "#1E293B")
+    (((class color) (background light))
+     :background "#F1F5F9"))
+  "Face for restricted region boundary."
+  :group 'evm)
+
 ;;; Data Structures
 
 (cl-defstruct evm-region
@@ -104,7 +112,10 @@ In extend mode: beg <= end, anchor is fixed."
   undo-snapshots  ; list of snapshots for undo
   last-regions    ; saved positions for reselect
   registers       ; hash-table: char -> list of strings
-  column-positions) ; hash-table for column caching
+  column-positions ; hash-table for column caching
+  restrict-beg    ; start of restricted region (marker or nil)
+  restrict-end    ; end of restricted region (marker or nil)
+  restrict-overlay) ; overlay for restricted region visualization
 
 (cl-defstruct evm-snapshot
   "Snapshot for undo/redo."
@@ -571,6 +582,20 @@ In extend mode: go to eol so visual cursor lands on last char."
         (overlay-put ov 'priority 50)
         (push ov evm--match-overlays)))))
 
+(defun evm--show-match-preview-restricted (pattern)
+  "Show preview of matches for PATTERN within current restriction."
+  (evm--hide-match-preview)
+  (let ((bounds (evm--restrict-bounds)))
+    (save-excursion
+      (goto-char (if bounds (car bounds) (point-min)))
+      (while (re-search-forward pattern (when bounds (cdr bounds)) t)
+        (when (evm--point-in-restrict-p (match-beginning 0))
+          (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
+            (overlay-put ov 'face 'evm-match-face)
+            (overlay-put ov 'evm-match t)
+            (overlay-put ov 'priority 50)
+            (push ov evm--match-overlays)))))))
+
 (defun evm--hide-match-preview ()
   "Hide match preview overlays."
   (mapc #'delete-overlay evm--match-overlays)
@@ -583,12 +608,14 @@ In extend mode: go to eol so visual cursor lands on last char."
   (when (evm-active-p)
     (let* ((mode (evm-state-mode evm--state))
            (count (evm-region-count))
-           (leader-idx (1+ (or (evm--leader-index) 0))))
+           (leader-idx (1+ (or (evm--leader-index) 0)))
+           (restricted (evm--restrict-active-p)))
       (propertize
-       (format " EVM[%s %d/%d]"
+       (format " EVM[%s %d/%d%s]"
                (if (eq mode 'cursor) "C" "E")
                leader-idx
-               count)
+               count
+               (if restricted " R" ""))
        'face 'evm-mode-line-face))))
 
 ;;; Overlapping regions check
@@ -633,6 +660,52 @@ In extend mode: go to eol so visual cursor lands on last char."
     (setf (evm-state-regions evm--state) (nreverse merged))
     (evm--sort-regions)
     (evm--update-region-indices)))
+
+;;; Restrict to region
+
+(defun evm--restrict-active-p ()
+  "Return t if a restriction is active."
+  (and evm--state
+       (evm-state-restrict-beg evm--state)
+       (evm-state-restrict-end evm--state)))
+
+(defun evm--set-restrict (beg end)
+  "Set restriction to region from BEG to END."
+  (evm--clear-restrict)
+  (setf (evm-state-restrict-beg evm--state) (evm--make-marker beg))
+  (setf (evm-state-restrict-end evm--state) (evm--make-marker end))
+  ;; Create visual overlay for restriction
+  (let ((ov (make-overlay beg end nil nil t)))
+    (overlay-put ov 'face 'evm-restrict-face)
+    (overlay-put ov 'evm-restrict t)
+    (overlay-put ov 'priority 10)
+    (setf (evm-state-restrict-overlay evm--state) ov)))
+
+(defun evm--clear-restrict ()
+  "Clear current restriction."
+  (when evm--state
+    (when-let ((ov (evm-state-restrict-overlay evm--state)))
+      (delete-overlay ov))
+    (when-let ((beg (evm-state-restrict-beg evm--state)))
+      (set-marker beg nil))
+    (when-let ((end (evm-state-restrict-end evm--state)))
+      (set-marker end nil))
+    (setf (evm-state-restrict-beg evm--state) nil
+          (evm-state-restrict-end evm--state) nil
+          (evm-state-restrict-overlay evm--state) nil)))
+
+(defun evm--restrict-bounds ()
+  "Return (BEG . END) of current restriction, or nil if none."
+  (when (evm--restrict-active-p)
+    (cons (marker-position (evm-state-restrict-beg evm--state))
+          (marker-position (evm-state-restrict-end evm--state)))))
+
+(defun evm--point-in-restrict-p (pos)
+  "Return t if POS is within the current restriction (or no restriction)."
+  (if-let ((bounds (evm--restrict-bounds)))
+      (and (>= pos (car bounds))
+           (<= pos (cdr bounds)))
+    t))
 
 (provide 'evm-core)
 ;;; evm-core.el ends here

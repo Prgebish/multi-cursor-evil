@@ -25,24 +25,24 @@
   - [x] 3.4 Extend mode — базовые операции
   - [x] 3.5 Переключение между режимами
 
-- [ ] Phase 4: Cursor Creation
-  - [ ] 4.1 Find Word (C-n)
-  - [ ] 4.2 Add Cursor Down/Up (C-Down/C-Up)
-  - [ ] 4.3 Add Cursor At Pos (клавиша + M-click)
-  - [ ] 4.4 Select All
-  - [ ] 4.5 Restrict to region
+- [x] Phase 4: Cursor Creation
+  - [x] 4.1 Find Word (C-n)
+  - [x] 4.2 Add Cursor Down/Up (C-Down/C-Up)
+  - [x] 4.3 Add Cursor At Pos (M-click)
+  - [x] 4.4 Select All
+  - [x] 4.5 Restrict to region (visual selection + C-n)
 
-- [ ] Phase 5: Navigation
-  - [ ] 5.1 n/N — следующее/предыдущее вхождение
-  - [ ] 5.2 ]/[ — навигация между курсорами
-  - [ ] 5.3 q — пропустить текущее
-  - [ ] 5.4 Q — удалить курсор
-  - [ ] 5.5 Курсор-"лидер" с отдельным face
+- [x] Phase 5: Navigation
+  - [x] 5.1 n/N — следующее/предыдущее вхождение
+  - [x] 5.2 ]/[ — навигация между курсорами
+  - [x] 5.3 q — пропустить текущее
+  - [x] 5.4 Q — удалить курсор
+  - [x] 5.5 Курсор-"лидер" с отдельным face
 
-- [ ] Phase 6: Advanced Commands
-  - [ ] 6.1 Alignment
-  - [ ] 6.2 Case conversion
-  - [ ] 6.3 Replace in regions
+- [x] Phase 6: Advanced Commands
+  - [x] 6.1 Alignment (\\a)
+  - [x] 6.2 Case conversion (U/u/~ in extend mode)
+  - [ ] 6.3 Replace in regions (отложено)
 
 - [ ] Phase 7: Run at Cursors
   - [ ] 7.1 Run Normal
@@ -78,14 +78,16 @@
 - Hydra/Transient меню — нет (отложили)
 
 ## Status
-**Phase 3** — ЗАВЕРШЕНО. Реализовано:
-- `evm-core.el` — структуры данных, overlays, базовые операции
+**Phase 4** — ЗАВЕРШЕНО. Реализовано:
+- `evm-core.el` — структуры данных, overlays, базовые операции, restrict to region
 - `evm.el` — entry point, keymaps, minor mode, команды
 - Cursor mode: движение, i/a/I/A/o/O, x/X/r/~
 - Extend mode: y/d/c/p/P, U/u/~, o (flip)
 - Переключение режимов: Tab
 - Navigation: ]/[ между курсорами, q/Q удаление
 - Поиск: C-n (find word), n/N, \\A (select all)
+- Cursor creation: C-Down/C-Up, M-click
+- Restrict to region: visual selection + C-n, \\r (clear)
 
 ## Files
 - `task_plan.md` — этот файл

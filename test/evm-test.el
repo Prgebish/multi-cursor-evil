@@ -758,5 +758,124 @@
     ;; Positions should remain modified (no resync)
     (should (equal (evm-test-positions) '(2 10)))))
 
+;;; Restrict to region tests
+
+(ert-deftest evm-test-restrict-active-p ()
+  "evm--restrict-active-p should return t when restriction is set."
+  (evm-test-with-buffer "foo bar foo baz foo"
+    (evm-activate)
+    (evm--create-region (point) (point))
+    (should-not (evm--restrict-active-p))
+    (evm--set-restrict 5 15)
+    (should (evm--restrict-active-p))
+    (evm--clear-restrict)
+    (should-not (evm--restrict-active-p))))
+
+(ert-deftest evm-test-restrict-bounds ()
+  "evm--restrict-bounds should return correct bounds."
+  (evm-test-with-buffer "foo bar foo baz foo"
+    (evm-activate)
+    (evm--create-region (point) (point))
+    (evm--set-restrict 5 15)
+    (let ((bounds (evm--restrict-bounds)))
+      (should (= (car bounds) 5))
+      (should (= (cdr bounds) 15)))))
+
+(ert-deftest evm-test-select-all-restricted ()
+  "\\A should only select occurrences within restriction."
+  (evm-test-with-buffer "foo bar foo baz foo qux foo"
+    ;; foo at positions: 1, 9, 17, 25
+    (evm-find-word)
+    ;; Set restriction from position 5 to 20 (covers foo at 9 and 17)
+    (evm--set-restrict 5 20)
+    ;; First foo at position 1 is the current selection (outside restriction)
+    ;; Clear regions and start fresh
+    (evm--remove-all-overlays)
+    (setf (evm-state-regions evm--state) nil)
+    ;; Go to position 9 (inside restriction)
+    (goto-char 9)
+    ;; Create region for foo at 9
+    (evm--create-region 9 12 (car (evm-state-patterns evm--state)))
+    ;; Select all should only add foo at 17
+    (evm-select-all)
+    ;; Should have exactly 2 cursors (at 9 and 17)
+    (should (= (evm-region-count) 2))
+    (should (equal (evm-test-positions) '(9 17)))))
+
+(ert-deftest evm-test-find-next-restricted ()
+  "n should only find occurrences within restriction."
+  (evm-test-with-buffer "foo bar foo baz foo qux foo"
+    ;; foo at positions: 1, 9, 17, 25
+    (evm-find-word)
+    ;; Set restriction from position 5 to 20 (covers foo at 9 and 17)
+    (evm--set-restrict 5 20)
+    ;; Start from position 9
+    (evm--remove-all-overlays)
+    (setf (evm-state-regions evm--state) nil)
+    (goto-char 9)
+    (evm--create-region 9 12 (car (evm-state-patterns evm--state)))
+    ;; find-next should find foo at 17
+    (evm-find-next)
+    (should (= (evm-region-count) 2))
+    ;; find-next again should wrap back to 9
+    (evm-find-next)
+    (should (= (evm-region-count) 2))
+    (should (= (evm-test-leader-pos) 9))))
+
+(ert-deftest evm-test-clear-restrict ()
+  "\\r should clear restriction."
+  (evm-test-with-buffer "foo bar foo baz foo"
+    (evm-find-word)
+    (evm--set-restrict 5 15)
+    (should (evm--restrict-active-p))
+    (evm-clear-restrict)
+    (should-not (evm--restrict-active-p))))
+
+(ert-deftest evm-test-exit-clears-restrict ()
+  "Exit should clear restriction."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm--set-restrict 1 10)
+    (should (evm--restrict-active-p))
+    (evm-exit)
+    ;; After exit, state is deactivated so restriction should be cleared
+    (should-not (evm--restrict-active-p))))
+
+(ert-deftest evm-test-mode-line-shows-restrict ()
+  "Mode-line should show R indicator when restricted."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (let ((indicator (evm--mode-line-indicator)))
+      (should-not (string-match-p " R" indicator)))
+    (evm--set-restrict 1 10)
+    (let ((indicator (evm--mode-line-indicator)))
+      (should (string-match-p " R" indicator)))))
+
+;;; Mouse click tests
+
+(ert-deftest evm-test-add-cursor-at-click-creates-cursor ()
+  "M-click should create cursor at click position."
+  (evm-test-with-buffer "foo bar baz"
+    ;; Simulate mouse click at position 5
+    (let ((event `(mouse-1 (,(selected-window) 5 (0 . 0) 0))))
+      (evm-add-cursor-at-click event))
+    (should (evm-active-p))
+    ;; First cursor at point (1), second at click position (5)
+    (should (= (evm-region-count) 2))))
+
+(ert-deftest evm-test-add-cursor-at-click-moves-leader-if-exists ()
+  "M-click on existing cursor should move leader."
+  (evm-test-with-buffer "foo bar baz"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm--create-region 5 5)
+    (should (= (evm-region-count) 2))
+    ;; Click on position 5 (existing cursor)
+    (let ((event `(mouse-1 (,(selected-window) 5 (0 . 0) 0))))
+      (evm-add-cursor-at-click event))
+    ;; Should still have 2 cursors, leader moved
+    (should (= (evm-region-count) 2))
+    (should (= (evm-test-leader-pos) 5))))
+
 (provide 'evm-test)
 ;;; evm-test.el ends here

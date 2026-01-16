@@ -67,6 +67,7 @@
 (define-key evm-mode-map (kbd "\\ A") #'evm-select-all)
 (define-key evm-mode-map (kbd "\\ a") #'evm-align)
 (define-key evm-mode-map (kbd "\\ g S") #'evm-reselect-last)
+(define-key evm-mode-map (kbd "\\ r") #'evm-clear-restrict)
 
 ;; Cursor mode specific
 (define-key evm-cursor-map (kbd "i") #'evm-insert)
@@ -83,6 +84,7 @@
 (define-key evm-cursor-map (kbd "C-n") #'evm-add-next-match)
 (define-key evm-cursor-map (kbd "<C-down>") #'evm-add-cursor-down)
 (define-key evm-cursor-map (kbd "<C-up>") #'evm-add-cursor-up)
+(define-key evm-cursor-map (kbd "<M-mouse-1>") #'evm-add-cursor-at-click)
 
 ;; Extend mode specific
 (define-key evm-extend-map (kbd "y") #'evm-yank)
@@ -96,6 +98,7 @@
 (define-key evm-extend-map (kbd "u") #'evm-downcase)
 (define-key evm-extend-map (kbd "~") #'evm-toggle-case)
 (define-key evm-extend-map (kbd "C-n") #'evm-add-next-match)
+(define-key evm-extend-map (kbd "<M-mouse-1>") #'evm-add-cursor-at-click)
 
 ;; Set parent keymaps
 (set-keymap-parent evm-cursor-map evm-mode-map)
@@ -188,6 +191,8 @@ Uses `emulation-mode-map-alists' to override evil bindings."
     ;; Remove overlays
     (evm--remove-all-overlays)
     (evm--hide-match-preview)
+    ;; Clear restriction
+    (evm--clear-restrict)
     ;; Remove hooks
     (remove-hook 'pre-command-hook #'evm--pre-command t)
     (remove-hook 'post-command-hook #'evm--post-command t)
@@ -515,29 +520,39 @@ matches when text hasn't been fully restored by undo."
 ;;;###autoload
 (defun evm-find-word ()
   "Start evm with word under cursor in extend mode with word selected.
-Like vim-visual-multi, immediately enters extend mode with the word highlighted."
+Like vim-visual-multi, immediately enters extend mode with the word highlighted.
+If called from evil visual mode, restricts search to the visual selection."
   (interactive)
-  (let* ((bounds (bounds-of-thing-at-point 'symbol))
-         (word (when bounds
-                 (buffer-substring-no-properties (car bounds) (cdr bounds)))))
-    (unless word
-      (user-error "No word at point"))
-    (unless (evm-active-p)
-      (evm-activate))
-    (let ((pattern (concat "\\_<" (regexp-quote word) "\\_>")))
-      ;; Add pattern
-      (push pattern (evm-state-patterns evm--state))
-      ;; Create first region with full word selection
-      (evm--create-region (car bounds) (cdr bounds) pattern)
-      ;; Switch to extend mode immediately
-      (setf (evm-state-mode evm--state) 'extend)
-      ;; Update overlays and keymap for extend mode
-      (evm--update-all-overlays)
-      (evm--update-keymap)
-      ;; Position cursor at end of word
-      (goto-char (1- (cdr bounds)))
-      ;; Show matches
-      (evm--show-match-preview pattern))))
+  ;; Check if we're in visual mode and capture the selection
+  (let ((visual-beg (when (evil-visual-state-p) (region-beginning)))
+        (visual-end (when (evil-visual-state-p) (region-end))))
+    ;; Exit visual state to get word at point
+    (when (evil-visual-state-p)
+      (evil-exit-visual-state))
+    (let* ((bounds (bounds-of-thing-at-point 'symbol))
+           (word (when bounds
+                   (buffer-substring-no-properties (car bounds) (cdr bounds)))))
+      (unless word
+        (user-error "No word at point"))
+      (unless (evm-active-p)
+        (evm-activate))
+      ;; Set restriction if we had a visual selection
+      (when (and visual-beg visual-end)
+        (evm--set-restrict visual-beg visual-end))
+      (let ((pattern (concat "\\_<" (regexp-quote word) "\\_>")))
+        ;; Add pattern
+        (push pattern (evm-state-patterns evm--state))
+        ;; Create first region with full word selection
+        (evm--create-region (car bounds) (cdr bounds) pattern)
+        ;; Switch to extend mode immediately
+        (setf (evm-state-mode evm--state) 'extend)
+        ;; Update overlays and keymap for extend mode
+        (evm--update-all-overlays)
+        (evm--update-keymap)
+        ;; Position cursor at end of word
+        (goto-char (1- (cdr bounds)))
+        ;; Show matches (respecting restriction)
+        (evm--show-match-preview-restricted pattern)))))
 
 (defun evm-add-next-match ()
   "Add next match for current pattern."
@@ -558,16 +573,20 @@ Like vim-visual-multi, immediately enters extend mode with the word highlighted.
 
 (defun evm--find-and-add-next-from (pattern start-pos)
   "Find next match for PATTERN starting from START-POS and move/add cursor there.
-Creates region with full match selection in extend mode."
-  (let (found-beg found-end)
+Creates region with full match selection in extend mode.
+Respects current restriction if active."
+  (let ((bounds (evm--restrict-bounds))
+        found-beg found-end)
     (save-excursion
-      (goto-char (min start-pos (point-max)))
-      (if (re-search-forward pattern nil t)
+      (goto-char (min start-pos (if bounds (cdr bounds) (point-max))))
+      (if (and (re-search-forward pattern (when bounds (cdr bounds)) t)
+               (evm--point-in-restrict-p (match-beginning 0)))
           (setq found-beg (match-beginning 0)
                 found-end (match-end 0))
-        ;; Wrap around
-        (goto-char (point-min))
-        (when (re-search-forward pattern nil t)
+        ;; Wrap around (to restriction start or buffer start)
+        (goto-char (if bounds (car bounds) (point-min)))
+        (when (and (re-search-forward pattern (when bounds (cdr bounds)) t)
+                   (evm--point-in-restrict-p (match-beginning 0)))
           (setq found-beg (match-beginning 0)
                 found-end (match-end 0)))))
     (when found-beg
@@ -615,16 +634,20 @@ Creates region with full match selection in extend mode."
 
 (defun evm--find-and-add-prev-from (pattern start-pos)
   "Find previous match for PATTERN starting from START-POS and move/add cursor there.
-Creates region with full match selection in extend mode."
-  (let (found-beg found-end)
+Creates region with full match selection in extend mode.
+Respects current restriction if active."
+  (let ((bounds (evm--restrict-bounds))
+        found-beg found-end)
     (save-excursion
-      (goto-char (max start-pos (point-min)))
-      (if (re-search-backward pattern nil t)
+      (goto-char (max start-pos (if bounds (car bounds) (point-min))))
+      (if (and (re-search-backward pattern (when bounds (car bounds)) t)
+               (evm--point-in-restrict-p (match-beginning 0)))
           (setq found-beg (match-beginning 0)
                 found-end (match-end 0))
-        ;; Wrap around
-        (goto-char (point-max))
-        (when (re-search-backward pattern nil t)
+        ;; Wrap around (to restriction end or buffer end)
+        (goto-char (if bounds (cdr bounds) (point-max)))
+        (when (and (re-search-backward pattern (when bounds (car bounds)) t)
+                   (evm--point-in-restrict-p (match-beginning 0)))
           (setq found-beg (match-beginning 0)
                 found-end (match-end 0)))))
     (when found-beg
@@ -680,23 +703,63 @@ Creates region with full match selection in extend mode."
         (evm--set-leader new-region)
         (goto-char new-pos)))))
 
+;;;###autoload
+(defun evm-add-cursor-at-click (event)
+  "Add a cursor at mouse click position.
+EVENT is the mouse event."
+  (interactive "e")
+  (let ((pos (posn-point (event-start event))))
+    (when pos
+      (unless (evm-active-p)
+        (evm-activate)
+        ;; Create first cursor at current point
+        (evm--create-region (point) (point)))
+      ;; Check if cursor already exists at this position
+      (let ((existing (cl-find-if
+                       (lambda (r)
+                         (= (evm--region-cursor-pos r) pos))
+                       (evm-state-regions evm--state))))
+        (if existing
+            ;; Move leader to existing cursor
+            (progn
+              (evm--set-leader existing)
+              (goto-char pos))
+          ;; Create new cursor at click position
+          (let ((new-region (evm--create-region pos pos)))
+            (evm--set-leader new-region)
+            (goto-char pos)))))))
+
 (defun evm-select-all ()
-  "Select all occurrences of current pattern with full selection."
+  "Select all occurrences of current pattern.
+In cursor mode: creates point cursors at end of each match.
+In extend mode: creates full selections covering each match.
+Respects current restriction if active."
   (interactive)
   (when (evm-active-p)
-    (let ((pattern (car (evm-state-patterns evm--state))))
+    (let ((pattern (car (evm-state-patterns evm--state)))
+          (bounds (evm--restrict-bounds))
+          (cursor-mode-p (evm-cursor-mode-p)))
       (unless pattern
         (user-error "No search pattern"))
       (save-excursion
-        (goto-char (point-min))
-        (while (re-search-forward pattern nil t)
-          (let ((beg (match-beginning 0))
-                (end (match-end 0)))
-            (unless (cl-find-if
-                     (lambda (r)
-                       (= (marker-position (evm-region-beg r)) beg))
-                     (evm-state-regions evm--state))
-              (evm--create-region beg end pattern)))))
+        (goto-char (if bounds (car bounds) (point-min)))
+        (while (re-search-forward pattern (when bounds (cdr bounds)) t)
+          (let* ((beg (match-beginning 0))
+                 (end (match-end 0)))
+            (when (evm--point-in-restrict-p beg)
+              (unless (cl-find-if
+                       (lambda (r)
+                         ;; In cursor mode: check by cursor position (end)
+                         ;; In extend mode: check by region start (beg)
+                         (if cursor-mode-p
+                             (= (evm--region-cursor-pos r) end)
+                           (= (marker-position (evm-region-beg r)) beg)))
+                       (evm-state-regions evm--state))
+                ;; In cursor mode: point cursor at end
+                ;; In extend mode: full selection
+                (if cursor-mode-p
+                    (evm--create-region end end pattern)
+                  (evm--create-region beg end pattern)))))))
       (evm--update-all-overlays))))
 
 ;;; Mode switching commands
@@ -997,6 +1060,16 @@ Creates region with full match selection in extend mode."
     (dolist (pos-pair last)
       (evm--create-region (car pos-pair) (car pos-pair)))))
 
+(defun evm-clear-restrict ()
+  "Clear current restriction, allowing search in entire buffer."
+  (interactive)
+  (when (evm-active-p)
+    (evm--clear-restrict)
+    ;; Update match preview if we have a pattern
+    (when-let ((pattern (car (evm-state-patterns evm--state))))
+      (evm--show-match-preview pattern))
+    (message "Restriction cleared")))
+
 ;;; Helper functions
 
 (defun evm--execute-at-all-cursors (fn &optional update-markers)
@@ -1029,7 +1102,10 @@ after FN completes (useful for commands like o/O that move point)."
   "Setup global keybindings for evm activation."
   (evil-define-key 'normal 'global (kbd "C-n") #'evm-find-word)
   (evil-define-key 'normal 'global (kbd "<C-down>") #'evm-add-cursor-down)
-  (evil-define-key 'normal 'global (kbd "<C-up>") #'evm-add-cursor-up))
+  (evil-define-key 'normal 'global (kbd "<C-up>") #'evm-add-cursor-up)
+  (evil-define-key 'normal 'global (kbd "<M-mouse-1>") #'evm-add-cursor-at-click)
+  ;; Visual mode: C-n starts evm restricted to visual selection
+  (evil-define-key 'visual 'global (kbd "C-n") #'evm-find-word))
 
 (provide 'evm)
 ;;; evm.el ends here
