@@ -129,6 +129,9 @@ In extend mode: beg <= end, anchor is fixed."
 (defvar-local evm--state nil
   "Buffer-local evm state.")
 
+(defvar-local evm--pending-restrict nil
+  "Pending restriction bounds (beg . end) to apply on next evm activation.")
+
 ;;; State predicates
 
 (defun evm-active-p ()

@@ -877,5 +877,28 @@
     (should (= (evm-region-count) 2))
     (should (= (evm-test-leader-pos) 5))))
 
+(ert-deftest evm-test-align ()
+  "Test that align inserts spaces before region start."
+  (evm-test-with-buffer "short = 1\nvery_long_name = 2\nmedium = 3"
+    (evm-activate)
+    ;; Create regions on the = signs
+    (goto-char (point-min))
+    (search-forward "=")
+    (backward-char)
+    (evm--create-region (point) (1+ (point)))
+    (forward-line)
+    (search-forward "=")
+    (backward-char)
+    (evm--create-region (point) (1+ (point)))
+    (forward-line)
+    (search-forward "=")
+    (backward-char)
+    (evm--create-region (point) (1+ (point)))
+    ;; Align
+    (evm-align)
+    ;; Check that = signs are aligned
+    (should (string= (buffer-string)
+                     "short          = 1\nvery_long_name = 2\nmedium         = 3"))))
+
 (provide 'evm-test)
 ;;; evm-test.el ends here

@@ -67,7 +67,7 @@
 (define-key evm-mode-map (kbd "\\ A") #'evm-select-all)
 (define-key evm-mode-map (kbd "\\ a") #'evm-align)
 (define-key evm-mode-map (kbd "\\ g S") #'evm-reselect-last)
-(define-key evm-mode-map (kbd "\\ r") #'evm-clear-restrict)
+(define-key evm-mode-map (kbd "\\ r") #'evm-toggle-restrict)
 
 ;; Cursor mode specific
 (define-key evm-cursor-map (kbd "i") #'evm-insert)
@@ -84,7 +84,7 @@
 (define-key evm-cursor-map (kbd "C-n") #'evm-add-next-match)
 (define-key evm-cursor-map (kbd "<C-down>") #'evm-add-cursor-down)
 (define-key evm-cursor-map (kbd "<C-up>") #'evm-add-cursor-up)
-(define-key evm-cursor-map (kbd "<M-mouse-1>") #'evm-add-cursor-at-click)
+(define-key evm-cursor-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
 
 ;; Extend mode specific
 (define-key evm-extend-map (kbd "y") #'evm-yank)
@@ -98,7 +98,7 @@
 (define-key evm-extend-map (kbd "u") #'evm-downcase)
 (define-key evm-extend-map (kbd "~") #'evm-toggle-case)
 (define-key evm-extend-map (kbd "C-n") #'evm-add-next-match)
-(define-key evm-extend-map (kbd "<M-mouse-1>") #'evm-add-cursor-at-click)
+(define-key evm-extend-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
 
 ;; Set parent keymaps
 (set-keymap-parent evm-cursor-map evm-mode-map)
@@ -520,39 +520,36 @@ matches when text hasn't been fully restored by undo."
 ;;;###autoload
 (defun evm-find-word ()
   "Start evm with word under cursor in extend mode with word selected.
-Like vim-visual-multi, immediately enters extend mode with the word highlighted.
-If called from evil visual mode, restricts search to the visual selection."
+Like vim-visual-multi, immediately enters extend mode with the word highlighted."
   (interactive)
-  ;; Check if we're in visual mode and capture the selection
-  (let ((visual-beg (when (evil-visual-state-p) (region-beginning)))
-        (visual-end (when (evil-visual-state-p) (region-end))))
-    ;; Exit visual state to get word at point
-    (when (evil-visual-state-p)
-      (evil-exit-visual-state))
-    (let* ((bounds (bounds-of-thing-at-point 'symbol))
-           (word (when bounds
-                   (buffer-substring-no-properties (car bounds) (cdr bounds)))))
-      (unless word
-        (user-error "No word at point"))
-      (unless (evm-active-p)
-        (evm-activate))
-      ;; Set restriction if we had a visual selection
-      (when (and visual-beg visual-end)
-        (evm--set-restrict visual-beg visual-end))
-      (let ((pattern (concat "\\_<" (regexp-quote word) "\\_>")))
-        ;; Add pattern
-        (push pattern (evm-state-patterns evm--state))
-        ;; Create first region with full word selection
-        (evm--create-region (car bounds) (cdr bounds) pattern)
-        ;; Switch to extend mode immediately
-        (setf (evm-state-mode evm--state) 'extend)
-        ;; Update overlays and keymap for extend mode
-        (evm--update-all-overlays)
-        (evm--update-keymap)
-        ;; Position cursor at end of word
-        (goto-char (1- (cdr bounds)))
-        ;; Show matches (respecting restriction)
-        (evm--show-match-preview-restricted pattern)))))
+  ;; Exit visual state if active
+  (when (evil-visual-state-p)
+    (evil-exit-visual-state))
+  (let* ((bounds (bounds-of-thing-at-point 'symbol))
+         (word (when bounds
+                 (buffer-substring-no-properties (car bounds) (cdr bounds)))))
+    (unless word
+      (user-error "No word at point"))
+    (unless (evm-active-p)
+      (evm-activate))
+    ;; Apply pending restriction if any
+    (when evm--pending-restrict
+      (evm--set-restrict (car evm--pending-restrict) (cdr evm--pending-restrict))
+      (setq evm--pending-restrict nil))
+    (let ((pattern (concat "\\_<" (regexp-quote word) "\\_>")))
+      ;; Add pattern
+      (push pattern (evm-state-patterns evm--state))
+      ;; Create first region with full word selection
+      (evm--create-region (car bounds) (cdr bounds) pattern)
+      ;; Switch to extend mode immediately
+      (setf (evm-state-mode evm--state) 'extend)
+      ;; Update overlays and keymap for extend mode
+      (evm--update-all-overlays)
+      (evm--update-keymap)
+      ;; Position cursor at end of word
+      (goto-char (1- (cdr bounds)))
+      ;; Show matches (respecting restriction)
+      (evm--show-match-preview-restricted pattern))))
 
 (defun evm-add-next-match ()
   "Add next match for current pattern."
@@ -1032,20 +1029,21 @@ Respects current restriction if active."
 ;;; Utility commands
 
 (defun evm-align ()
-  "Align all cursors vertically."
+  "Align all cursors vertically.
+Spaces are inserted before the start of each region."
   (interactive)
   (when (evm-active-p)
     (evm--push-undo-snapshot)
-    ;; Find max column
+    ;; Find max column based on region starts
     (let ((max-col 0))
       (dolist (region (evm-state-regions evm--state))
         (save-excursion
-          (goto-char (evm--region-cursor-pos region))
+          (goto-char (marker-position (evm-region-beg region)))
           (setq max-col (max max-col (current-column)))))
-      ;; Add spaces to align
+      ;; Add spaces before region starts to align
       (dolist (region (reverse (evm-state-regions evm--state)))
         (save-excursion
-          (goto-char (evm--region-cursor-pos region))
+          (goto-char (marker-position (evm-region-beg region)))
           (let ((spaces-needed (- max-col (current-column))))
             (when (> spaces-needed 0)
               (insert (make-string spaces-needed ?\s)))))))
@@ -1059,6 +1057,41 @@ Respects current restriction if active."
       (evm-activate))
     (dolist (pos-pair last)
       (evm--create-region (car pos-pair) (car pos-pair)))))
+
+(defun evm-toggle-restrict ()
+  "Toggle restriction for evm search.
+If in evil visual mode: set pending restriction for next C-n.
+If evm active with restriction: clear it."
+  (interactive)
+  (cond
+   ;; In visual mode: save pending restriction (don't activate evm yet)
+   ((evil-visual-state-p)
+    (let ((beg (region-beginning))
+          (end (region-end)))
+      (evil-exit-visual-state)
+      (if (evm-active-p)
+          ;; evm already active - apply restriction immediately
+          (progn
+            (evm--set-restrict beg end)
+            (when-let ((pattern (car (evm-state-patterns evm--state))))
+              (evm--show-match-preview-restricted pattern))
+            (message "Restriction set"))
+        ;; evm not active - save for later
+        (setq evm--pending-restrict (cons beg end))
+        (message "Restriction set (will apply on C-n)"))))
+   ;; evm active with restriction: clear it
+   ((and (evm-active-p) (evm--restrict-active-p))
+    (evm--clear-restrict)
+    (when-let ((pattern (car (evm-state-patterns evm--state))))
+      (evm--show-match-preview pattern))
+    (message "Restriction cleared"))
+   ;; Pending restriction exists: clear it
+   (evm--pending-restrict
+    (setq evm--pending-restrict nil)
+    (message "Pending restriction cleared"))
+   ;; Nothing to do
+   (t
+    (message "Select region in visual mode to set restriction"))))
 
 (defun evm-clear-restrict ()
   "Clear current restriction, allowing search in entire buffer."
@@ -1103,9 +1136,11 @@ after FN completes (useful for commands like o/O that move point)."
   (evil-define-key 'normal 'global (kbd "C-n") #'evm-find-word)
   (evil-define-key 'normal 'global (kbd "<C-down>") #'evm-add-cursor-down)
   (evil-define-key 'normal 'global (kbd "<C-up>") #'evm-add-cursor-up)
-  (evil-define-key 'normal 'global (kbd "<M-mouse-1>") #'evm-add-cursor-at-click)
-  ;; Visual mode: C-n starts evm restricted to visual selection
-  (evil-define-key 'visual 'global (kbd "C-n") #'evm-find-word))
+  ;; Mouse bindings need direct definition in state map
+  (define-key evil-normal-state-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
+  ;; Visual mode bindings
+  (evil-define-key 'visual 'global (kbd "C-n") #'evm-find-word)
+  (evil-define-key 'visual 'global (kbd "\\ r") #'evm-toggle-restrict))
 
 (provide 'evm)
 ;;; evm.el ends here
