@@ -860,18 +860,33 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
   (interactive)
   (when (evm-extend-mode-p)
     (evm--push-undo-snapshot)
-    (dolist (region (evm-state-regions evm--state))
-      (let ((beg (marker-position (evm-region-beg region)))
-            (end (marker-position (evm-region-end region))))
-        (save-excursion
-          (goto-char beg)
-          (while (< (point) end)
-            (let* ((char (char-after))
-                   (new-char (if (eq (upcase char) char)
-                                 (downcase char)
-                               (upcase char))))
-              (delete-char 1)
-              (insert new-char))))))))
+    ;; Save positions before modification (markers will shift)
+    (let ((saved-positions
+           (mapcar (lambda (r)
+                     (list r
+                           (marker-position (evm-region-beg r))
+                           (marker-position (evm-region-end r))
+                           (marker-position (evm-region-anchor r))))
+                   (evm-state-regions evm--state))))
+      ;; Toggle case using delete/insert
+      (dolist (region (evm-state-regions evm--state))
+        (let ((beg (marker-position (evm-region-beg region)))
+              (end (marker-position (evm-region-end region))))
+          (save-excursion
+            (goto-char beg)
+            (while (< (point) end)
+              (let* ((char (char-after))
+                     (new-char (if (eq (upcase char) char)
+                                   (downcase char)
+                                 (upcase char))))
+                (delete-char 1)
+                (insert new-char))))))
+      ;; Restore marker positions
+      (dolist (saved saved-positions)
+        (cl-destructuring-bind (region beg end anchor) saved
+          (set-marker (evm-region-beg region) beg)
+          (set-marker (evm-region-end region) end)
+          (set-marker (evm-region-anchor region) anchor))))))
 
 ;;; Utility commands
 

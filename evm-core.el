@@ -14,6 +14,9 @@
 (require 'cl-lib)
 (require 'evil)
 
+;; Forward declaration for function defined in evm.el
+(declare-function evm--update-keymap "evm" ())
+
 ;;; Custom group
 
 (defgroup evm nil
@@ -381,7 +384,8 @@ In extend mode: moves the active end."
       (set-marker (evm-region-beg region) cursor-pos)
       (set-marker (evm-region-end region) cursor-pos)
       (set-marker (evm-region-anchor region) cursor-pos)))
-  (evm--update-all-overlays))
+  (evm--update-all-overlays)
+  (evm--update-keymap))
 
 (defun evm--enter-extend-mode ()
   "Enter extend mode - extend regions from current positions."
@@ -393,7 +397,8 @@ In extend mode: moves the active end."
         (set-marker (evm-region-end region)
                     (min (1+ pos) (point-max)))
         (setf (evm-region-dir region) 1))))
-  (evm--update-all-overlays))
+  (evm--update-all-overlays)
+  (evm--update-keymap))
 
 (defun evm-toggle-mode ()
   "Toggle between cursor and extend mode."

@@ -250,6 +250,29 @@
       (should (> (marker-position (evm-region-end region))
                  (marker-position (evm-region-beg region)))))))
 
+(ert-deftest evm-test-toggle-mode-updates-keymap ()
+  "Tab should update keymap so extend mode keys work."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; In cursor mode, d should NOT be bound to evm-delete
+    (should (evm-cursor-mode-p))
+    (should-not (eq (key-binding "d") 'evm-delete))
+    ;; Toggle to extend mode
+    (evm-toggle-mode)
+    (should (evm-extend-mode-p))
+    ;; Now d should be bound to evm-delete
+    (should (eq (key-binding "d") 'evm-delete))
+    (should (eq (key-binding "y") 'evm-yank))
+    (should (eq (key-binding "U") 'evm-upcase))
+    ;; Toggle back to cursor mode
+    (evm-toggle-mode)
+    (should (evm-cursor-mode-p))
+    ;; d should no longer be evm-delete
+    (should-not (eq (key-binding "d") 'evm-delete))
+    ;; i should be evm-insert in cursor mode
+    (should (eq (key-binding "i") 'evm-insert))))
+
 ;;; Cursor mode editing tests
 
 (ert-deftest evm-test-delete-char ()
@@ -325,6 +348,40 @@
     (evm-forward-char)
     (evm-downcase)
     (should (string= (buffer-string) "foo bar foo"))))
+
+(ert-deftest evm-test-toggle-case ()
+  "~ should toggle case of all regions."
+  (evm-test-with-buffer "FoO bar FoO"
+    (evm-find-word)
+    (evm-find-next)
+    (evm-toggle-mode)
+    (evm-forward-char)
+    (evm-forward-char)
+    (evm-toggle-case)
+    (should (string= (buffer-string) "fOo bar fOo"))))
+
+(ert-deftest evm-test-toggle-case-preserves-markers ()
+  "~ should preserve region markers for subsequent operations."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (evm-toggle-mode)
+    (evm-forward-char)
+    (evm-forward-char)
+    (let ((regions-before (mapcar (lambda (r)
+                                    (list (marker-position (evm-region-beg r))
+                                          (marker-position (evm-region-end r))))
+                                  (evm-get-all-regions))))
+      (evm-toggle-case)
+      (let ((regions-after (mapcar (lambda (r)
+                                     (list (marker-position (evm-region-beg r))
+                                           (marker-position (evm-region-end r))))
+                                   (evm-get-all-regions))))
+        ;; Markers should be preserved
+        (should (equal regions-before regions-after))
+        ;; Delete should work after toggle-case
+        (evm-delete)
+        (should (string= (buffer-string) " bar "))))))
 
 ;;; Select all tests
 
