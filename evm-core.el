@@ -251,7 +251,12 @@ Returns the created region."
 (defun evm--create-cursor-overlay (region)
   "Create cursor overlay for REGION."
   (let* ((pos (marker-position (evm-region-beg region)))
-         (end-pos (min (1+ pos) (point-max)))
+         (at-eol (save-excursion
+                   (goto-char pos)
+                   (or (= pos (line-end-position))
+                       (= pos (point-max)))))
+         ;; At EOL, don't extend overlay past line end - just cover the position
+         (end-pos (if at-eol pos (min (1+ pos) (point-max))))
          (ov (make-overlay pos end-pos nil t nil)))
     (overlay-put ov 'evm-type 'cursor)
     (overlay-put ov 'evm-id (evm-region-id region))
@@ -260,9 +265,8 @@ Returns the created region."
                  (if (evm--leader-p region)
                      'evm-leader-cursor-face
                    'evm-cursor-face))
-    ;; For EOL or EOF - show as bar
-    (when (or (= pos (line-end-position))
-              (= pos (point-max)))
+    ;; For EOL or EOF - show as bar after the line
+    (when at-eol
       (overlay-put ov 'after-string
                    (propertize " " 'face (overlay-get ov 'face)
                                'cursor t)))
@@ -472,8 +476,14 @@ This function is called with point already at the region's cursor position."
   (beginning-of-line))
 
 (defun evm--move-line-end ()
-  "Move to end of line."
-  (end-of-line))
+  "Move to end of line (last character, like evil $)."
+  (let ((eol (line-end-position))
+        (bol (line-beginning-position)))
+    (if (= bol eol)
+        ;; Empty line - go to beginning of line
+        (goto-char bol)
+      ;; Go to last character (not past it), like evil normal state $
+      (goto-char (1- eol)))))
 
 (defun evm--move-first-non-blank ()
   "Move to first non-blank character."

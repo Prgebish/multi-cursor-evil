@@ -419,6 +419,37 @@
     (evm-previous-line)
     (should (= (current-column) 6))))
 
+;;; End of line movement tests
+
+(ert-deftest evm-test-end-of-line-goes-to-last-char ()
+  "$ should move to last character, not past it (like evil $)."
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors on each line
+    (goto-char 1)
+    (evm-activate)
+    (evm--create-region 1 1)   ; line 1, 'f'
+    (evm--create-region 5 5)   ; line 2, 'b'
+    (evm--create-region 9 9)   ; line 3, 'b'
+    (should (= (evm-region-count) 3))
+    ;; Move to end of line
+    (evm-end-of-line)
+    ;; Positions should be on last char of each line:
+    ;; line 1: "foo" ends at pos 3 (the 'o')
+    ;; line 2: "bar" ends at pos 7 (the 'r')
+    ;; line 3: "baz" ends at pos 11 (the 'z')
+    (should (equal (evm-test-positions) '(3 7 11)))))
+
+(ert-deftest evm-test-end-of-line-empty-line ()
+  "$ on empty line should stay at beginning."
+  (evm-test-with-buffer "foo\n\nbaz"
+    ;; Create cursor on empty line (position 5, which is the empty line)
+    (goto-char 5)
+    (evm-activate)
+    (evm--create-region 5 5)
+    ;; Move to end of line (on empty line, stays at beginning)
+    (evm-end-of-line)
+    (should (equal (evm-test-positions) '(5)))))
+
 ;;; Edge cases
 
 (ert-deftest evm-test-no-word-at-point ()
