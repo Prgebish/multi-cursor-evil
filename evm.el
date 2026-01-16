@@ -335,20 +335,16 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
         (when (> anchor max-pos)
           (set-marker (evm-region-anchor region) max-pos))))))
 
-(defvar evm--last-buffer-tick nil
-  "Buffer tick before last command, used to detect undo.")
-
 (defun evm--pre-command ()
   "Called before each command."
-  (when (evm-active-p)
-    (setq evm--last-buffer-tick (buffer-modified-tick))))
+  ;; Currently empty but kept for potential future use
+  nil)
 
 (defun evm--post-command ()
   "Called after each command."
   (when (evm-active-p)
-    ;; After undo (buffer tick decreased), resync regions with pattern
-    (when (and evm--last-buffer-tick
-               (< (buffer-modified-tick) evm--last-buffer-tick)
+    ;; After undo command, resync regions with pattern
+    (when (and (memq this-command '(undo evil-undo undo-tree-undo undo-fu-only-undo))
                (car (evm-state-patterns evm--state)))
       (evm--resync-regions-to-pattern))
     ;; Keep real cursor at leader visual position
@@ -360,9 +356,11 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
 
 (defun evm--resync-regions-to-pattern ()
   "Resync region positions to match pattern occurrences in buffer.
-Called after undo to fix marker drift."
+Called after undo to fix marker drift.
+Only moves a region if there's a match very close to its current position
+\(within the length of the match pattern). This prevents jumping to distant
+matches when text hasn't been fully restored by undo."
   (let* ((pattern (car (evm-state-patterns evm--state)))
-         (num-regions (evm-region-count))
          (matches '())
          (cursor-mode-p (evm-cursor-mode-p)))
     ;; Find all matches
@@ -371,20 +369,38 @@ Called after undo to fix marker drift."
       (while (re-search-forward pattern nil t)
         (push (cons (match-beginning 0) (match-end 0)) matches)))
     (setq matches (nreverse matches))
-    ;; If same number of matches as regions, update positions
-    (when (= (length matches) num-regions)
-      (let ((sorted-regions (cl-sort (copy-sequence (evm-state-regions evm--state))
-                                     #'< :key (lambda (r) (marker-position (evm-region-beg r))))))
-        (cl-loop for region in sorted-regions
-                 for match in matches
-                 do (let ((beg (if cursor-mode-p (cdr match) (car match)))
-                          (end (cdr match))
-                          (anchor (if cursor-mode-p (cdr match) (car match))))
-                      (set-marker (evm-region-beg region) beg)
-                      (set-marker (evm-region-end region) end)
-                      (set-marker (evm-region-anchor region) anchor)
-                      (setf (evm-region-dir region) 1)))
-        (evm--update-all-overlays)))))
+    (when matches
+      ;; For each region, find a match that contains or is adjacent to current position
+      (dolist (region (evm-state-regions evm--state))
+        (let* ((region-beg (marker-position (evm-region-beg region)))
+               (region-end (marker-position (evm-region-end region)))
+               (found-match nil))
+          ;; Find match that overlaps with region or is very close (within match length)
+          (dolist (match matches)
+            (let* ((match-beg (car match))
+                   (match-end (cdr match))
+                   (match-len (- match-end match-beg)))
+              ;; Check if region position is within or very close to match
+              (when (or
+                     ;; Region beg is inside match
+                     (and (>= region-beg match-beg) (<= region-beg match-end))
+                     ;; Region end is inside match
+                     (and (>= region-end match-beg) (<= region-end match-end))
+                     ;; Region beg is just before match (within match-len)
+                     (and (< region-beg match-beg) (>= region-beg (- match-beg match-len)))
+                     ;; Region beg is just after match (within match-len)
+                     (and (> region-beg match-end) (<= region-beg (+ match-end match-len))))
+                (setq found-match match))))
+          ;; Only update if we found a nearby match
+          (when found-match
+            (let ((beg (if cursor-mode-p (cdr found-match) (car found-match)))
+                  (end (cdr found-match))
+                  (anchor (if cursor-mode-p (cdr found-match) (car found-match))))
+              (set-marker (evm-region-beg region) beg)
+              (set-marker (evm-region-end region) end)
+              (set-marker (evm-region-anchor region) anchor)
+              (setf (evm-region-dir region) 1)))))
+      (evm--update-all-overlays))))
 
 ;;; Movement commands
 

@@ -680,13 +680,47 @@
     (evm-toggle-mode)
     (should (evm-cursor-mode-p))
     (should (equal (evm-test-positions) '(4 12)))
-    
+
     ;; Run resync
     (evm--resync-regions-to-pattern)
-    
+
     ;; Should still be at end (4 and 12)
     ;; Prior to fix, this would move them to start (1 and 9)
     (should (equal (evm-test-positions) '(4 12)))))
+
+(ert-deftest evm-test-post-command-triggers-resync-on-undo ()
+  "Post-command hook should trigger resync when undo command runs."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; Manually corrupt positions to simulate marker drift
+    (let ((regions (evm-get-all-regions)))
+      (set-marker (evm-region-beg (car regions)) 2)
+      (set-marker (evm-region-beg (cadr regions)) 10))
+    ;; Positions are now wrong
+    (should (equal (evm-test-positions) '(2 10)))
+    ;; Simulate undo command by setting this-command and calling post-command
+    (let ((this-command 'evil-undo))
+      (evm--post-command))
+    ;; Positions should be corrected back to pattern matches
+    (should (equal (evm-test-positions) '(1 9)))))
+
+(ert-deftest evm-test-post-command-no-resync-on-other-commands ()
+  "Post-command hook should NOT trigger resync for non-undo commands."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; Manually change positions
+    (let ((regions (evm-get-all-regions)))
+      (set-marker (evm-region-beg (car regions)) 2)
+      (set-marker (evm-region-beg (cadr regions)) 10))
+    ;; Positions are modified
+    (should (equal (evm-test-positions) '(2 10)))
+    ;; Simulate non-undo command
+    (let ((this-command 'forward-char))
+      (evm--post-command))
+    ;; Positions should remain modified (no resync)
+    (should (equal (evm-test-positions) '(2 10)))))
 
 (provide 'evm-test)
 ;;; evm-test.el ends here

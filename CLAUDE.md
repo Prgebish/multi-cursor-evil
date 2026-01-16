@@ -9,14 +9,8 @@ This file provides guidance to Claude Code when working with this repository.
 ## Architecture
 
 Пакет разделён на модули:
-- `evm.el` — entry point
+- `evm.el` — entry point, команды, keymaps
 - `evm-core.el` — курсоры, overlays, базовые операции
-- `evm-commands.el` — alignment, case conversion, replace
-- `evm-navigation.el` — создание курсоров, навигация
-- `evm-registers.el` — VM Registers
-- `evm-run.el` — Run Normal/Macro/Ex
-- `evm-undo.el` — Undo/Redo с восстановлением
-- `evm-integration.el` — интеграция с evil-surround
 
 Подробности в `architecture.md`.
 
