@@ -163,6 +163,21 @@
     (should (= (evm-region-count) 1))
     (should (= (evm-test-leader-pos) 1))))
 
+(ert-deftest evm-test-skip-current-after-N ()
+  "q after N should search backward."
+  (evm-test-with-buffer "foo bar foo baz foo qux foo"
+    ;; foo at positions: 1, 9, 17, 25
+    (evm-find-word)
+    ;; N - find previous (wraps to 25)
+    (evm-find-prev)
+    (should (= (evm-region-count) 2))
+    (should (= (evm-test-leader-pos) 25))
+    ;; q should skip 25 and find 17 (backward)
+    (evm-skip-current)
+    (should (= (evm-region-count) 2))
+    (should (equal (evm-test-positions) '(1 17)))
+    (should (= (evm-test-leader-pos) 17))))
+
 (ert-deftest evm-test-remove-current ()
   "Q should remove current cursor."
   (evm-test-with-buffer "foo bar foo"

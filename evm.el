@@ -331,18 +331,23 @@ Uses `emulation-mode-map-alists' to override evil bindings."
       (goto-char (evm--region-cursor-pos prev-region)))))
 
 (defun evm-skip-current ()
-  "Skip current match: delete it and find next occurrence."
+  "Skip current match: delete it and find next occurrence in search direction."
   (interactive)
   (when (evm-active-p)
     (let* ((leader (evm--leader-region))
            (pattern (car (evm-state-patterns evm--state)))
+           (direction (evm-state-search-direction evm--state))
            ;; Save position BEFORE deleting, so we search from correct place
-           (search-from (1+ (marker-position (evm-region-end leader)))))
+           (search-from (if (= direction 1)
+                            (1+ (marker-position (evm-region-end leader)))
+                          (1- (marker-position (evm-region-beg leader))))))
       ;; Delete current cursor
       (evm--delete-region leader)
-      ;; Find next occurrence starting from saved position
+      ;; Find next occurrence starting from saved position in search direction
       (when pattern
-        (evm--find-and-add-next-from pattern search-from))
+        (if (= direction 1)
+            (evm--find-and-add-next-from pattern search-from)
+          (evm--find-and-add-prev-from pattern search-from)))
       ;; If no cursors left and no new found, exit
       (when (= (evm-region-count) 0)
         (evm-exit)))))
@@ -428,6 +433,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (when (evm-active-p)
     (let ((pattern (car (evm-state-patterns evm--state))))
       (when pattern
+        (setf (evm-state-search-direction evm--state) 1)
         (evm--find-and-add-next pattern)))))
 
 (defun evm-find-prev ()
@@ -436,6 +442,7 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (when (evm-active-p)
     (let ((pattern (car (evm-state-patterns evm--state))))
       (when pattern
+        (setf (evm-state-search-direction evm--state) -1)
         (evm--find-and-add-prev pattern)))))
 
 (defun evm--find-and-add-prev (pattern)
@@ -443,8 +450,12 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (let* ((leader (evm--leader-region))
          (start-pos (if leader
                         (1- (marker-position (evm-region-beg leader)))
-                      (1- (point))))
-         found-pos)
+                      (1- (point)))))
+    (evm--find-and-add-prev-from pattern start-pos)))
+
+(defun evm--find-and-add-prev-from (pattern start-pos)
+  "Find previous match for PATTERN starting from START-POS and move/add cursor there."
+  (let (found-pos)
     (save-excursion
       (goto-char (max start-pos (point-min)))
       (if (re-search-backward pattern nil t)
