@@ -37,12 +37,16 @@
 ;;; Activation tests
 
 (ert-deftest evm-test-find-word-activates ()
-  "C-n should activate evm and create cursor on word."
+  "C-n should activate evm and create region on word in extend mode."
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
     (should (evm-active-p))
+    (should (evm-extend-mode-p))  ; Now in extend mode
     (should (= (evm-region-count) 1))
-    (should (equal (evm-test-positions) '(1)))))
+    (should (equal (evm-test-positions) '(1)))
+    ;; Region should cover the word "foo" (positions 1-4)
+    (let ((region (car (evm-get-all-regions))))
+      (should (= (marker-position (evm-region-end region)) 4)))))
 
 (ert-deftest evm-test-find-word-sets-pattern ()
   "C-n should set search pattern."
@@ -197,37 +201,47 @@
 
 ;;; Movement tests
 
+(defun evm-test-end-positions ()
+  "Get list of cursor end positions."
+  (mapcar (lambda (r) (marker-position (evm-region-end r)))
+          (evm-get-all-regions)))
+
 (ert-deftest evm-test-forward-char ()
   "l should move all cursors right."
-  (evm-test-with-buffer "foo bar foo"
+  (evm-test-with-buffer "foo bar foo zzz"
+    ;; Extra text at end so cursor can move
     (evm-find-word)
     (evm-find-next)
-    (let ((pos-before (evm-test-positions)))
+    ;; In extend mode, movement expands selection (changes end)
+    (let ((end-before (evm-test-end-positions)))
       (evm-forward-char)
-      (should (equal (evm-test-positions)
-                     (mapcar #'1+ pos-before))))))
+      (should (equal (evm-test-end-positions)
+                     (mapcar #'1+ end-before))))))
 
 (ert-deftest evm-test-backward-char ()
   "h should move all cursors left."
-  (evm-test-with-buffer "foo bar foo"
+  (evm-test-with-buffer "foo bar foo zzz"
     (evm-find-word)
     (evm-find-next)
+    ;; In extend mode, movement changes end position
     (evm-forward-char)
     (evm-forward-char)
-    (let ((pos-before (evm-test-positions)))
+    (let ((end-before (evm-test-end-positions)))
       (evm-backward-char)
-      (should (equal (evm-test-positions)
-                     (mapcar #'1- pos-before))))))
+      (should (equal (evm-test-end-positions)
+                     (mapcar #'1- end-before))))))
 
 (ert-deftest evm-test-forward-word ()
   "w should move all cursors to next word."
-  (evm-test-with-buffer "aa bb aa"
+  (evm-test-with-buffer "aa bb aa cc"
     (evm-find-word)
     (evm-find-next)
-    ;; Cursors at 1 and 7
-    (evm-forward-word)
-    ;; Should be at 4 and beyond
-    (should (> (car (evm-test-positions)) 1))))
+    ;; Regions at 1-3 and 7-9 with "aa" selected
+    (let ((end-before (evm-test-end-positions)))
+      (evm-forward-word)
+      ;; In extend mode, end positions should have moved forward
+      (should (> (car (evm-test-end-positions))
+                 (car end-before))))))
 
 ;;; Mode switching tests
 
@@ -235,69 +249,81 @@
   "Tab should toggle between cursor and extend mode."
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
-    (should (evm-cursor-mode-p))
-    (evm-toggle-mode)
+    ;; After C-n we're now in extend mode
     (should (evm-extend-mode-p))
     (evm-toggle-mode)
-    (should (evm-cursor-mode-p))))
+    (should (evm-cursor-mode-p))
+    (evm-toggle-mode)
+    (should (evm-extend-mode-p))))
 
-(ert-deftest evm-test-extend-mode-expands-region ()
-  "Extend mode should make regions non-empty."
+(ert-deftest evm-test-extend-mode-has-selection ()
+  "C-n should create regions with full word selection."
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
-    (evm-toggle-mode)
+    ;; Already in extend mode with selection
+    (should (evm-extend-mode-p))
     (let ((region (car (evm-get-all-regions))))
       (should (> (marker-position (evm-region-end region))
-                 (marker-position (evm-region-beg region)))))))
+                 (marker-position (evm-region-beg region))))
+      ;; "foo" is 3 chars, so end - beg = 3
+      (should (= (- (marker-position (evm-region-end region))
+                    (marker-position (evm-region-beg region)))
+                 3)))))
 
 (ert-deftest evm-test-toggle-mode-updates-keymap ()
-  "Tab should update keymap so extend mode keys work."
+  "Tab should update keymap so mode-specific keys work."
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
     (evm-find-next)
-    ;; In cursor mode, d should NOT be bound to evm-delete
-    (should (evm-cursor-mode-p))
-    (should-not (eq (key-binding "d") 'evm-delete))
-    ;; Toggle to extend mode
-    (evm-toggle-mode)
+    ;; After C-n we're in extend mode
     (should (evm-extend-mode-p))
-    ;; Now d should be bound to evm-delete
+    ;; In extend mode, d should be bound to evm-delete
     (should (eq (key-binding "d") 'evm-delete))
     (should (eq (key-binding "y") 'evm-yank))
     (should (eq (key-binding "U") 'evm-upcase))
-    ;; Toggle back to cursor mode
+    ;; Toggle to cursor mode
     (evm-toggle-mode)
     (should (evm-cursor-mode-p))
     ;; d should no longer be evm-delete
     (should-not (eq (key-binding "d") 'evm-delete))
     ;; i should be evm-insert in cursor mode
-    (should (eq (key-binding "i") 'evm-insert))))
+    (should (eq (key-binding "i") 'evm-insert))
+    ;; Toggle back to extend mode
+    (evm-toggle-mode)
+    (should (evm-extend-mode-p))
+    (should (eq (key-binding "d") 'evm-delete))))
 
 ;;; Cursor mode editing tests
 
 (ert-deftest evm-test-delete-char ()
   "x should delete char at all cursors."
-  (evm-test-with-buffer "foo bar foo"
-    (evm-find-word)
-    (evm-find-next)
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors on each line using C-down
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
     (evm-delete-char)
-    (should (string= (buffer-string) "oo bar oo"))))
+    (should (string= (buffer-string) "oo\nar\naz"))))
 
 (ert-deftest evm-test-replace-char ()
   "r should replace char at all cursors."
-  (evm-test-with-buffer "foo bar foo"
-    (evm-find-word)
-    (evm-find-next)
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors using C-down for cursor mode
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
     (evm-replace-char ?X)
-    (should (string= (buffer-string) "Xoo bar Xoo"))))
+    (should (string= (buffer-string) "Xoo\nXar\nXaz"))))
 
 (ert-deftest evm-test-toggle-case-char ()
   "~ should toggle case at all cursors."
-  (evm-test-with-buffer "foo bar foo"
-    (evm-find-word)
-    (evm-find-next)
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors using C-down for cursor mode
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
     (evm-toggle-case-char)
-    (should (string= (buffer-string) "Foo bar Foo"))))
+    (should (string= (buffer-string) "Foo\nBar\nBaz"))))
 
 ;;; Extend mode editing tests
 
@@ -306,9 +332,7 @@
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
     (evm-find-next)
-    (evm-toggle-mode)
-    (evm-forward-char)
-    (evm-forward-char)
+    ;; Already in extend mode with "foo" selected
     (evm-yank)
     (let ((contents (gethash ?\" (evm-state-registers evm--state))))
       (should contents)
@@ -320,9 +344,7 @@
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
     (evm-find-next)
-    (evm-toggle-mode)
-    (evm-forward-char)
-    (evm-forward-char)
+    ;; Already in extend mode with "foo" selected
     (evm-delete)
     (should (string= (buffer-string) " bar "))
     (should (evm-cursor-mode-p))))
@@ -332,9 +354,7 @@
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
     (evm-find-next)
-    (evm-toggle-mode)
-    (evm-forward-char)
-    (evm-forward-char)
+    ;; Already in extend mode with "foo" selected
     (evm-upcase)
     (should (string= (buffer-string) "FOO bar FOO"))))
 
@@ -343,9 +363,7 @@
   (evm-test-with-buffer "FOO bar FOO"
     (evm-find-word)
     (evm-find-next)
-    (evm-toggle-mode)
-    (evm-forward-char)
-    (evm-forward-char)
+    ;; Already in extend mode with "FOO" selected
     (evm-downcase)
     (should (string= (buffer-string) "foo bar foo"))))
 
@@ -354,9 +372,7 @@
   (evm-test-with-buffer "FoO bar FoO"
     (evm-find-word)
     (evm-find-next)
-    (evm-toggle-mode)
-    (evm-forward-char)
-    (evm-forward-char)
+    ;; Already in extend mode with "FoO" selected
     (evm-toggle-case)
     (should (string= (buffer-string) "fOo bar fOo"))))
 
@@ -365,9 +381,7 @@
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
     (evm-find-next)
-    (evm-toggle-mode)
-    (evm-forward-char)
-    (evm-forward-char)
+    ;; Already in extend mode with "foo" selected
     (let ((regions-before (mapcar (lambda (r)
                                     (list (marker-position (evm-region-beg r))
                                           (marker-position (evm-region-end r))))
@@ -511,41 +525,43 @@
 
 (ert-deftest evm-test-insert-replicates-text ()
   "i should insert text at all cursor positions."
-  (evm-test-with-buffer "foo bar foo"
-    (evm-find-word)
-    (evm-find-next)
-    ;; Cursors at 1 and 9
-    (should (equal (evm-test-positions) '(1 9)))
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors using C-down for cursor mode
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
     ;; Enter insert mode
     (evm-insert)
     ;; Insert text
     (insert "X")
     ;; Exit insert mode
     (evil-normal-state)
-    ;; Text should be inserted at both positions
-    (should (string= (buffer-string) "Xfoo bar Xfoo"))))
+    ;; Text should be inserted at all cursor positions
+    (should (string= (buffer-string) "Xfoo\nXbar\nXbaz"))))
 
 (ert-deftest evm-test-insert-multiple-chars ()
   "i should insert multiple characters at all cursor positions."
-  (evm-test-with-buffer "foo bar foo"
-    (evm-find-word)
-    (evm-find-next)
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors using C-down
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
     (evm-insert)
     (insert "hello")
     (evil-normal-state)
-    (should (string= (buffer-string) "hellofoo bar hellofoo"))))
+    (should (string= (buffer-string) "hellofoo\nhellobar\nhellobaz"))))
 
 (ert-deftest evm-test-append-replicates-text ()
   "a should append text after all cursor positions."
-  (evm-test-with-buffer "foo bar foo"
-    (evm-find-word)
-    (evm-find-next)
-    ;; Cursors at 1 and 9
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors using C-down
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    ;; Cursors at beginning of each line
     (evm-append)
     (insert "X")
     (evil-normal-state)
     ;; Text should be inserted after first char at each position
-    (should (string= (buffer-string) "fXoo bar fXoo"))))
+    (should (string= (buffer-string) "fXoo\nbXar\nbXaz"))))
 
 (ert-deftest evm-test-insert-line ()
   "I should insert at beginning of line for all cursors."
@@ -570,26 +586,31 @@
 
 (ert-deftest evm-test-insert-same-line-multiple ()
   "i should work correctly with multiple cursors on same line."
-  (evm-test-with-buffer "foo foo foo"
-    (evm-find-word)
-    (evm-find-next)
-    (evm-find-next)
+  (evm-test-with-buffer "aaa bbb ccc"
+    ;; Create cursors at specific positions using direct region creation
+    (evm-activate)
+    (evm--create-region 1 1)   ; before "aaa"
+    (evm--create-region 5 5)   ; before "bbb"
+    (evm--create-region 9 9)   ; before "ccc"
+    (should (= (evm-region-count) 3))
     (evm-insert)
     (insert "X")
     (evil-normal-state)
-    (should (string= (buffer-string) "Xfoo Xfoo Xfoo"))))
+    (should (string= (buffer-string) "Xaaa Xbbb Xccc"))))
 
 (ert-deftest evm-test-insert-leader-middle ()
   "i should work when leader is in the middle of cursor list."
-  (evm-test-with-buffer "foo bar foo baz foo"
-    (evm-find-word)
-    (evm-find-next)
-    (evm-find-next)
-    (evm-goto-prev) ;; move leader to middle
+  (evm-test-with-buffer "aaa\nbbb\nccc"
+    ;; Create cursors on all lines
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    ;; Leader is at last line (ccc)
+    (evm-goto-prev) ;; move leader to middle (bbb)
+    (should (= (evm-region-count) 3))
     (evm-insert)
     (insert "X")
     (evil-normal-state)
-    (should (string= (buffer-string) "Xfoo bar Xfoo baz Xfoo"))))
+    (should (string= (buffer-string) "Xaaa\nXbbb\nXccc"))))
 
 (ert-deftest evm-test-open-below ()
   "o should open line below and insert at all cursors."

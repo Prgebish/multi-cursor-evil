@@ -454,7 +454,8 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
 
 ;;;###autoload
 (defun evm-find-word ()
-  "Start evm with word under cursor, find next occurrence."
+  "Start evm with word under cursor in extend mode with word selected.
+Like vim-visual-multi, immediately enters extend mode with the word highlighted."
   (interactive)
   (let* ((bounds (bounds-of-thing-at-point 'symbol))
          (word (when bounds
@@ -466,8 +467,15 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
     (let ((pattern (concat "\\_<" (regexp-quote word) "\\_>")))
       ;; Add pattern
       (push pattern (evm-state-patterns evm--state))
-      ;; Create first region on current word
-      (evm--create-region (car bounds) (car bounds) pattern)
+      ;; Create first region with full word selection
+      (evm--create-region (car bounds) (cdr bounds) pattern)
+      ;; Switch to extend mode immediately
+      (setf (evm-state-mode evm--state) 'extend)
+      ;; Update overlays and keymap for extend mode
+      (evm--update-all-overlays)
+      (evm--update-keymap)
+      ;; Position cursor at end of word
+      (goto-char (1- (cdr bounds)))
       ;; Show matches
       (evm--show-match-preview pattern))))
 
@@ -489,31 +497,35 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
     (evm--find-and-add-next-from pattern start-pos)))
 
 (defun evm--find-and-add-next-from (pattern start-pos)
-  "Find next match for PATTERN starting from START-POS and move/add cursor there."
-  (let (found-pos)
+  "Find next match for PATTERN starting from START-POS and move/add cursor there.
+Creates region with full match selection in extend mode."
+  (let (found-beg found-end)
     (save-excursion
       (goto-char (min start-pos (point-max)))
       (if (re-search-forward pattern nil t)
-          (setq found-pos (match-beginning 0))
+          (setq found-beg (match-beginning 0)
+                found-end (match-end 0))
         ;; Wrap around
         (goto-char (point-min))
         (when (re-search-forward pattern nil t)
-          (setq found-pos (match-beginning 0)))))
-    (when found-pos
+          (setq found-beg (match-beginning 0)
+                found-end (match-end 0)))))
+    (when found-beg
       ;; Check if cursor already exists at this position
       (let ((existing (cl-find-if
                        (lambda (r)
-                         (= (marker-position (evm-region-beg r)) found-pos))
+                         (= (marker-position (evm-region-beg r)) found-beg))
                        (evm-state-regions evm--state))))
         (if existing
             ;; Just move leader to existing cursor
             (progn
               (evm--set-leader existing)
-              (goto-char found-pos))
-          ;; Create new cursor
-          (let ((new-region (evm--create-region found-pos found-pos pattern)))
+              (goto-char (1- found-end)))
+          ;; Create new region with full selection
+          (let ((new-region (evm--create-region found-beg found-end pattern)))
             (evm--set-leader new-region)
-            (goto-char found-pos)))))))
+            (evm--update-all-overlays)
+            (goto-char (1- found-end))))))))
 
 (defun evm-find-next ()
   "Find next occurrence, move leader there."
@@ -542,31 +554,35 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
     (evm--find-and-add-prev-from pattern start-pos)))
 
 (defun evm--find-and-add-prev-from (pattern start-pos)
-  "Find previous match for PATTERN starting from START-POS and move/add cursor there."
-  (let (found-pos)
+  "Find previous match for PATTERN starting from START-POS and move/add cursor there.
+Creates region with full match selection in extend mode."
+  (let (found-beg found-end)
     (save-excursion
       (goto-char (max start-pos (point-min)))
       (if (re-search-backward pattern nil t)
-          (setq found-pos (match-beginning 0))
+          (setq found-beg (match-beginning 0)
+                found-end (match-end 0))
         ;; Wrap around
         (goto-char (point-max))
         (when (re-search-backward pattern nil t)
-          (setq found-pos (match-beginning 0)))))
-    (when found-pos
+          (setq found-beg (match-beginning 0)
+                found-end (match-end 0)))))
+    (when found-beg
       ;; Check if cursor already exists at this position
       (let ((existing (cl-find-if
                        (lambda (r)
-                         (= (marker-position (evm-region-beg r)) found-pos))
+                         (= (marker-position (evm-region-beg r)) found-beg))
                        (evm-state-regions evm--state))))
         (if existing
             ;; Just move leader to existing cursor
             (progn
               (evm--set-leader existing)
-              (goto-char found-pos))
-          ;; Create new cursor
-          (let ((new-region (evm--create-region found-pos found-pos pattern)))
+              (goto-char (1- found-end)))
+          ;; Create new region with full selection
+          (let ((new-region (evm--create-region found-beg found-end pattern)))
             (evm--set-leader new-region)
-            (goto-char found-pos)))))))
+            (evm--update-all-overlays)
+            (goto-char (1- found-end))))))))
 
 (defun evm-add-cursor-down ()
   "Add cursor on line below."
@@ -605,7 +621,7 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
         (goto-char new-pos)))))
 
 (defun evm-select-all ()
-  "Select all occurrences of current pattern."
+  "Select all occurrences of current pattern with full selection."
   (interactive)
   (when (evm-active-p)
     (let ((pattern (car (evm-state-patterns evm--state))))
@@ -614,12 +630,14 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
       (save-excursion
         (goto-char (point-min))
         (while (re-search-forward pattern nil t)
-          (let ((pos (match-beginning 0)))
+          (let ((beg (match-beginning 0))
+                (end (match-end 0)))
             (unless (cl-find-if
                      (lambda (r)
-                       (= (marker-position (evm-region-beg r)) pos))
+                       (= (marker-position (evm-region-beg r)) beg))
                      (evm-state-regions evm--state))
-              (evm--create-region pos pos pattern))))))))
+              (evm--create-region beg end pattern)))))
+      (evm--update-all-overlays))))
 
 ;;; Mode switching commands
 
