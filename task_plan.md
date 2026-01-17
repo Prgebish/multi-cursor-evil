@@ -85,17 +85,18 @@
     - [x] `yiw`, `yaw` — yank inner/a word
     - [x] `Y` — yank line
 
-  - [ ] 8.5 Дополнительные операторы (отложено)
-    - [ ] `J` — join lines (работает через \\z)
-    - [ ] `>`, `<` — indent/outdent с motion
-    - [ ] `gu`, `gU` — case change с motion
-    - [ ] `g~` — toggle case с motion
+  - [x] 8.5 Дополнительные операторы
+    - [x] `J` — join lines
+    - [x] `>`, `<` — indent/outdent с motion (>>, <<, >j, >ip)
+    - [x] `gu`, `gU` — case change с motion (guu, gUU, guw)
+    - [x] `g~` — toggle case с motion (g~~, g~w)
 
 - [ ] Phase 9: Special Features
-  - [ ] 9.1 Multiline mode
-  - [ ] 9.2 Undo/Redo с восстановлением курсоров
-  - [ ] 9.3 Reselect Last
-  - [ ] 9.4 VM Registers
+  - [ ] 9.1 Visual mode cursor selection (создание курсоров из visual selection)
+  - [ ] 9.2 Multiline mode
+  - [ ] 9.3 Undo/Redo с восстановлением курсоров
+  - [ ] 9.4 Reselect Last
+  - [ ] 9.5 VM Registers
 
 - [ ] Phase 10: Integration
   - [ ] 10.1 Интеграция с evil-surround
@@ -120,7 +121,7 @@
 - Hydra/Transient меню — нет (отложили)
 
 ## Status
-**Phase 8** — ЗАВЕРШЕНО (все основные операторы включая dd/cc/yy). Остались только дополнительные операторы (8.5).
+**Phase 8** — ПОЛНОСТЬЮ ЗАВЕРШЕНО (включая 8.5: J, >, <, gu, gU, g~).
 
 Реализовано:
 - `evm-core.el` — структуры данных, overlays, базовые операции, restrict to region
@@ -136,6 +137,9 @@
 - Operators: d/c/y с motions, text objects, counts
 - Shortcuts: D, C (с правильной позицией курсора), Y
 - Fix: dw/dW не удаляют newline (vim-like behavior)
+- J — join lines
+- >, < — indent/outdent с motion (>>, <<, >j, >ip)
+- gu, gU, g~ — case change с motion
 
 ## Files
 - `task_plan.md` — этот файл

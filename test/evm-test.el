@@ -1262,5 +1262,116 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
   ;; the function signature accepts operator-char
   (should (functionp 'evm--parse-motion)))
 
+;;; Join lines tests
+
+(ert-deftest evm-test-join-lines-basic ()
+  "J should join current line with next line."
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm-join-lines 1)
+    (should (string= (buffer-string) "foo bar\nbaz"))))
+
+(ert-deftest evm-test-join-lines-multiple-cursors ()
+  "J should join lines at all cursor positions."
+  (evm-test-with-buffer "aaa\nbbb\nccc\nddd"
+    (evm-activate)
+    (evm--create-region 1 1)   ; line 1
+    (evm--create-region 9 9)   ; line 3
+    (should (= (evm-region-count) 2))
+    (evm-join-lines 1)
+    (should (string= (buffer-string) "aaa bbb\nccc ddd"))))
+
+(ert-deftest evm-test-join-lines-removes-leading-whitespace ()
+  "J should remove leading whitespace from joined line."
+  (evm-test-with-buffer "foo\n   bar"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm-join-lines 1)
+    (should (string= (buffer-string) "foo bar"))))
+
+(ert-deftest evm-test-join-lines-no-space-before-paren ()
+  "J should not add space when next line starts with ) or ]."
+  (evm-test-with-buffer "foo(\n)"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm-join-lines 1)
+    (should (string= (buffer-string) "foo()"))))
+
+;;; Indent/outdent operator tests
+
+(ert-deftest evm-test-operator-indent-bindings ()
+  "> and < should be bound in cursor mode."
+  (evm-test-with-buffer "foo"
+    (evm-add-cursor-down)
+    (should (evm-cursor-mode-p))
+    (should (eq (key-binding ">") 'evm-operator-indent))
+    (should (eq (key-binding "<") 'evm-operator-outdent))))
+
+(ert-deftest evm-test-execute-indent-line ()
+  "evm--execute-indent-line should indent lines."
+  (evm-test-with-buffer "foo\nbar"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (let ((tab-width 2))
+      (evm--execute-indent-line 'indent 1))
+    (should (string-match-p "^  foo" (buffer-string)))))
+
+(ert-deftest evm-test-execute-outdent-line ()
+  "evm--execute-indent-line with outdent should remove indentation."
+  (evm-test-with-buffer "  foo\n  bar"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (let ((tab-width 2))
+      (evm--execute-indent-line 'outdent 1))
+    (should (string-match-p "^foo" (buffer-string)))))
+
+;;; Case change operator tests
+
+(ert-deftest evm-test-case-operator-bindings ()
+  "gu, gU, g~ should be bound in cursor mode."
+  (evm-test-with-buffer "foo"
+    (evm-add-cursor-down)
+    (should (evm-cursor-mode-p))
+    (should (eq (key-binding (kbd "g u")) 'evm-operator-downcase))
+    (should (eq (key-binding (kbd "g U")) 'evm-operator-upcase))
+    (should (eq (key-binding (kbd "g ~")) 'evm-operator-toggle-case))))
+
+(ert-deftest evm-test-toggle-case-region-function ()
+  "evm--toggle-case-region should toggle case of region."
+  (evm-test-with-buffer "FoO BaR"
+    (evm--toggle-case-region 1 4)
+    (should (string= (buffer-substring 1 4) "fOo"))))
+
+(ert-deftest evm-test-execute-case-line-upcase ()
+  "evm--execute-case-line with upcase-region should uppercase line."
+  (evm-test-with-buffer "foo bar\nbaz"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm--execute-case-line #'upcase-region 1)
+    (should (string= (buffer-string) "FOO BAR\nbaz"))))
+
+(ert-deftest evm-test-execute-case-line-downcase ()
+  "evm--execute-case-line with downcase-region should lowercase line."
+  (evm-test-with-buffer "FOO BAR\nBAZ"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm--execute-case-line #'downcase-region 1)
+    (should (string= (buffer-string) "foo bar\nBAZ"))))
+
+(ert-deftest evm-test-execute-case-line-toggle ()
+  "evm--execute-case-line with toggle should toggle case of line."
+  (evm-test-with-buffer "FoO bAr\nbaz"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm--execute-case-line #'evm--toggle-case-region 1)
+    (should (string= (buffer-string) "fOo BaR\nbaz"))))
+
+(ert-deftest evm-test-case-operators-exist ()
+  "Case operator functions should exist and be commands."
+  (should (commandp 'evm-operator-downcase))
+  (should (commandp 'evm-operator-upcase))
+  (should (commandp 'evm-operator-toggle-case)))
+
 (provide 'evm-test)
 ;;; evm-test.el ends here

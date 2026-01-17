@@ -84,6 +84,7 @@
 (define-key evm-cursor-map (kbd "r") #'evm-replace-char)
 (define-key evm-cursor-map (kbd "~") #'evm-toggle-case-char)
 (define-key evm-cursor-map (kbd "v") #'evm-enter-extend)
+(define-key evm-cursor-map (kbd "J") #'evm-join-lines)
 ;; Operators with motions
 (define-key evm-cursor-map (kbd "d") #'evm-operator-delete)
 (define-key evm-cursor-map (kbd "c") #'evm-operator-change)
@@ -91,6 +92,14 @@
 (define-key evm-cursor-map (kbd "D") #'evm-delete-to-eol)
 (define-key evm-cursor-map (kbd "C") #'evm-change-to-eol)
 (define-key evm-cursor-map (kbd "Y") #'evm-yank-line)
+;; Indent/outdent operators
+(define-key evm-cursor-map (kbd ">") #'evm-operator-indent)
+(define-key evm-cursor-map (kbd "<") #'evm-operator-outdent)
+;; Case change operators (g prefix)
+(define-key evm-cursor-map (kbd "g u") #'evm-operator-downcase)
+(define-key evm-cursor-map (kbd "g U") #'evm-operator-upcase)
+(define-key evm-cursor-map (kbd "g ~") #'evm-operator-toggle-case)
+;; Cursor creation
 (define-key evm-cursor-map (kbd "C-n") #'evm-add-next-match)
 (define-key evm-cursor-map (kbd "<C-down>") #'evm-add-cursor-down)
 (define-key evm-cursor-map (kbd "<C-up>") #'evm-add-cursor-up)
@@ -1706,6 +1715,252 @@ If FOR-CHANGE is non-nil, don't adjust cursor position (for C command)."
         (puthash ?\" (nreverse texts) (evm-state-registers evm--state))
         (kill-new (car texts))
         (message "Yanked %d lines" (length texts))))))
+
+(defun evm-join-lines (count)
+  "Join current line with next COUNT lines (J).
+Replaces the newline and leading whitespace with a single space."
+  (interactive "p")
+  (when (evm-cursor-mode-p)
+    (let ((undo-handle (prepare-change-group)))
+      (evm--push-undo-snapshot)
+      (unwind-protect
+          (progn
+            (let ((regions (evm--regions-by-position-reverse))
+                  (inhibit-modification-hooks t))
+              (remove-hook 'post-command-hook #'evm--post-command t)
+              (unwind-protect
+                  (dolist (region regions)
+                    (goto-char (evm--region-cursor-pos region))
+                    ;; Join count lines
+                    (dotimes (_ (or count 1))
+                      (end-of-line)
+                      (unless (eobp)
+                        (let ((join-pos (point)))
+                          ;; Delete newline
+                          (delete-char 1)
+                          ;; Delete leading whitespace on next line
+                          (while (and (not (eobp))
+                                      (memq (char-after) '(?\s ?\t)))
+                            (delete-char 1))
+                          ;; Insert single space unless at eob or next char is )
+                          (unless (or (eobp)
+                                      (memq (char-after) '(?\) ?\])))
+                            (insert " "))
+                          ;; Position cursor at join point
+                          (evm--region-set-cursor-pos region join-pos)))))
+                (add-hook 'post-command-hook #'evm--post-command nil t))))
+        (undo-amalgamate-change-group undo-handle)))
+    (evm--clamp-markers)
+    (evm--check-and-merge-overlapping)
+    (evm--update-all-overlays)
+    (when-let ((leader (evm--leader-region)))
+      (goto-char (evm--region-cursor-pos leader)))))
+
+;;; Indent/outdent operators
+
+(defun evm--execute-indent-line (direction count)
+  "Indent or outdent COUNT lines starting from current position.
+DIRECTION is \\='indent or \\='outdent."
+  (let* ((count (or count 1))
+         (beg (line-beginning-position))
+         (end (save-excursion
+                (forward-line (1- count))
+                (line-end-position))))
+    (pcase direction
+      ('indent (indent-rigidly beg end tab-width))
+      ('outdent (indent-rigidly beg end (- tab-width))))
+    ;; Move cursor to first non-blank
+    (back-to-indentation)
+    (point)))
+
+(defun evm--execute-indent-motion (direction motion-keys count)
+  "Indent or outdent region defined by MOTION-KEYS with COUNT.
+DIRECTION is \\='indent or \\='outdent."
+  (let* ((range (evm--get-motion-range motion-keys count))
+         (beg (car range))
+         (end (cadr range)))
+    (when (and beg end (> end beg))
+      ;; Expand to full lines
+      (save-excursion
+        (goto-char beg)
+        (setq beg (line-beginning-position))
+        (goto-char end)
+        (unless (bolp)
+          (setq end (line-end-position))))
+      (pcase direction
+        ('indent (indent-rigidly beg end tab-width))
+        ('outdent (indent-rigidly beg end (- tab-width))))
+      ;; Move cursor to first non-blank of first line
+      (goto-char beg)
+      (back-to-indentation)
+      (point))))
+
+(defun evm--run-indent-operator (direction &optional prefix-count operator-char)
+  "Run indent/outdent operator with motion.
+DIRECTION is \\='indent or \\='outdent.
+PREFIX-COUNT is optional count from prefix argument.
+OPERATOR-CHAR is > or < for detecting line operations (>> or <<)."
+  (let ((motion (evm--parse-motion operator-char)))
+    (unless motion
+      (message "Cancelled")
+      (cl-return-from evm--run-indent-operator nil))
+    (let ((keys (plist-get motion :keys))
+          (line-p (plist-get motion :line))
+          (count (let ((motion-count (plist-get motion :count))
+                       (pre (and prefix-count (prefix-numeric-value prefix-count))))
+                   (cond
+                    ((and pre motion-count) (* pre motion-count))
+                    (pre pre)
+                    (motion-count motion-count)
+                    (t nil))))
+          (undo-handle (prepare-change-group)))
+      (evm--push-undo-snapshot)
+      (unwind-protect
+          (progn
+            (let ((regions (evm--regions-by-position-reverse))
+                  (inhibit-modification-hooks t))
+              (remove-hook 'post-command-hook #'evm--post-command t)
+              (unwind-protect
+                  (dolist (region regions)
+                    (goto-char (evm--region-cursor-pos region))
+                    (let ((new-pos (if line-p
+                                       (evm--execute-indent-line direction count)
+                                     (evm--execute-indent-motion direction keys count))))
+                      (when new-pos
+                        (evm--region-set-cursor-pos region new-pos))))
+                (add-hook 'post-command-hook #'evm--post-command nil t))))
+        (undo-amalgamate-change-group undo-handle)))
+    (evm--clamp-markers)
+    (evm--check-and-merge-overlapping)
+    (evm--update-all-overlays)
+    (when-let ((leader (evm--leader-region)))
+      (goto-char (evm--region-cursor-pos leader)))))
+
+(defun evm-operator-indent (count)
+  "Indent operator: wait for motion, then indent at all cursors.
+COUNT is optional prefix argument.
+Examples: >j (indent 2 lines), >> (indent current line), >ip (indent paragraph)."
+  (interactive "P")
+  (when (evm-cursor-mode-p)
+    (message "[EVM] >")
+    (evm--run-indent-operator 'indent count ?>)))
+
+(defun evm-operator-outdent (count)
+  "Outdent operator: wait for motion, then outdent at all cursors.
+COUNT is optional prefix argument.
+Examples: <j (outdent 2 lines), << (outdent current line), <ip (outdent paragraph)."
+  (interactive "P")
+  (when (evm-cursor-mode-p)
+    (message "[EVM] <")
+    (evm--run-indent-operator 'outdent count ?<)))
+
+;;; Case change operators (gu, gU, g~)
+
+(defun evm--execute-case-line (case-fn count)
+  "Apply CASE-FN to COUNT lines starting from current position.
+CASE-FN is \\='upcase-region, \\='downcase-region, or \\='evm--toggle-case-region."
+  (let* ((count (or count 1))
+         (beg (line-beginning-position))
+         (end (save-excursion
+                (forward-line (1- count))
+                (line-end-position))))
+    (funcall case-fn beg end)
+    ;; Move cursor to first non-blank
+    (goto-char beg)
+    (back-to-indentation)
+    (point)))
+
+(defun evm--execute-case-motion (case-fn motion-keys count)
+  "Apply CASE-FN to region defined by MOTION-KEYS with COUNT.
+CASE-FN is \\='upcase-region, \\='downcase-region, or \\='evm--toggle-case-region."
+  (let* ((range (evm--get-motion-range motion-keys count))
+         (beg (car range))
+         (end (cadr range)))
+    (when (and beg end (> end beg))
+      (funcall case-fn beg end)
+      ;; Move cursor to beginning of affected region
+      (goto-char beg)
+      (point))))
+
+(defun evm--toggle-case-region (beg end)
+  "Toggle case of text between BEG and END."
+  (save-excursion
+    (goto-char beg)
+    (while (< (point) end)
+      (let* ((char (char-after))
+             (new-char (if (eq (upcase char) char)
+                           (downcase char)
+                         (upcase char))))
+        (delete-char 1)
+        (insert-char new-char)))))
+
+(defun evm--run-case-operator (case-fn &optional prefix-count line-char)
+  "Run case change operator with motion.
+CASE-FN is the case function to apply.
+PREFIX-COUNT is optional count from prefix argument.
+LINE-CHAR is the character that triggers line operation (u for guu, U for gUU, ~ for g~~)."
+  (let ((motion (evm--parse-motion line-char)))
+    (unless motion
+      (message "Cancelled")
+      (cl-return-from evm--run-case-operator nil))
+    (let ((keys (plist-get motion :keys))
+          (line-p (plist-get motion :line))
+          (count (let ((motion-count (plist-get motion :count))
+                       (pre (and prefix-count (prefix-numeric-value prefix-count))))
+                   (cond
+                    ((and pre motion-count) (* pre motion-count))
+                    (pre pre)
+                    (motion-count motion-count)
+                    (t nil))))
+          (undo-handle (prepare-change-group)))
+      (evm--push-undo-snapshot)
+      (unwind-protect
+          (progn
+            (let ((regions (evm--regions-by-position-reverse))
+                  (inhibit-modification-hooks t))
+              (remove-hook 'post-command-hook #'evm--post-command t)
+              (unwind-protect
+                  (dolist (region regions)
+                    (goto-char (evm--region-cursor-pos region))
+                    (let ((new-pos (if line-p
+                                       (evm--execute-case-line case-fn count)
+                                     (evm--execute-case-motion case-fn keys count))))
+                      (when new-pos
+                        (evm--region-set-cursor-pos region new-pos))))
+                (add-hook 'post-command-hook #'evm--post-command nil t))))
+        (undo-amalgamate-change-group undo-handle)))
+    (evm--clamp-markers)
+    (evm--check-and-merge-overlapping)
+    (evm--update-all-overlays)
+    (when-let ((leader (evm--leader-region)))
+      (goto-char (evm--region-cursor-pos leader)))))
+
+(defun evm-operator-downcase (count)
+  "Downcase operator: wait for motion, then lowercase at all cursors.
+COUNT is optional prefix argument.
+Examples: guw (lowercase word), guiw (lowercase inner word), guu (lowercase line)."
+  (interactive "P")
+  (when (evm-cursor-mode-p)
+    (message "[EVM] gu")
+    (evm--run-case-operator #'downcase-region count ?u)))
+
+(defun evm-operator-upcase (count)
+  "Upcase operator: wait for motion, then uppercase at all cursors.
+COUNT is optional prefix argument.
+Examples: gUw (uppercase word), gUiw (uppercase inner word), gUU (uppercase line)."
+  (interactive "P")
+  (when (evm-cursor-mode-p)
+    (message "[EVM] gU")
+    (evm--run-case-operator #'upcase-region count ?U)))
+
+(defun evm-operator-toggle-case (count)
+  "Toggle case operator: wait for motion, then toggle case at all cursors.
+COUNT is optional prefix argument.
+Examples: g~w (toggle case word), g~iw (toggle case inner word), g~~ (toggle case line)."
+  (interactive "P")
+  (when (evm-cursor-mode-p)
+    (message "[EVM] g~")
+    (evm--run-case-operator #'evm--toggle-case-region count ?~)))
 
 ;;; Global keybindings for activation
 
