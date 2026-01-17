@@ -1377,12 +1377,16 @@ Returns a plist (:keys STRING :count NUMBER) or nil on cancel.
 Returns (BEG END) or nil if motion failed."
   (let* ((count (or count 1))
          (beg (point))
+         (beg-line (line-number-at-pos beg))
          end
          ;; Temporarily disable evm keymaps
          (saved-alist evm--emulation-alist)
          ;; Check if motion is inclusive
          (first-char (aref motion-keys 0))
-         (inclusive-p (memq first-char evm--inclusive-motions)))
+         (inclusive-p (memq first-char evm--inclusive-motions))
+         ;; Check if this is a word motion (w/W) that shouldn't cross line boundaries
+         ;; for delete/change operators (like vim behavior)
+         (word-motion-p (memq first-char '(?w ?W))))
     (setq evm--emulation-alist nil)
     ;; Remove post-command-hook temporarily to prevent cursor jumping during macro
     (remove-hook 'post-command-hook #'evm--post-command t)
@@ -1431,6 +1435,16 @@ Returns (BEG END) or nil if motion failed."
         (let ((tmp beg))
           (setq beg end
                 end tmp)))
+      ;; For word motions (w/W), don't cross line boundaries - like vim's dw behavior
+      ;; If the motion crossed to a different line, limit end to end of original line
+      (when (and word-motion-p
+                 (> end beg)
+                 (save-excursion
+                   (goto-char end)
+                   (/= (line-number-at-pos) beg-line)))
+        (setq end (save-excursion
+                    (goto-char beg)
+                    (line-end-position))))
       (when (> end beg)
         (list beg end)))))
 
@@ -1550,8 +1564,9 @@ Examples: yw (yank word), yiw (yank inner word), 2yw (yank 2 words)."
         (message "Yanked %d regions" (length (plist-get result :texts)))))))
 
 ;; Shortcuts for common operations
-(defun evm-delete-to-eol ()
-  "Delete from cursor to end of line (D)."
+(defun evm-delete-to-eol (&optional for-change)
+  "Delete from cursor to end of line (D).
+If FOR-CHANGE is non-nil, don't adjust cursor position (for C command)."
   (interactive)
   (when (evm-cursor-mode-p)
     (let ((texts '())
@@ -1570,8 +1585,12 @@ Examples: yw (yank word), yiw (yank inner word), 2yw (yank 2 words)."
                       (when (> end beg)
                         (push (buffer-substring-no-properties beg end) texts)
                         (delete-region beg end))
-                      ;; Adjust position like evil does in normal state
-                      (evm--region-set-cursor-pos region (evm--adjust-cursor-pos (point)))))
+                      ;; For D: adjust position like evil does in normal state
+                      ;; For C: keep cursor at deletion point for insert mode
+                      (evm--region-set-cursor-pos region
+                                                  (if for-change
+                                                      (point)
+                                                    (evm--adjust-cursor-pos (point))))))
                 (add-hook 'post-command-hook #'evm--post-command nil t)))
             (when texts
               (puthash ?\" (nreverse texts) (evm-state-registers evm--state))
@@ -1587,7 +1606,7 @@ Examples: yw (yank word), yiw (yank inner word), 2yw (yank 2 words)."
   "Change from cursor to end of line (C)."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm-delete-to-eol)
+    (evm-delete-to-eol t)  ; t = for-change, don't adjust cursor
     (evm--start-insert-mode)
     (evil-insert-state)))
 

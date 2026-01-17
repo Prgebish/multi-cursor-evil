@@ -1081,6 +1081,24 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     (evm-delete-to-eol)
     (should (string= (buffer-string) "foo\nbaz"))))
 
+(ert-deftest evm-test-change-to-eol-cursor-position ()
+  "C should place cursor at deletion point, not adjusted back."
+  (evm-test-with-buffer "alpha beta gamma\nalpha beta gamma"
+    (evm-activate)
+    ;; Place cursors at 'b' in "beta" on each line (positions 7 and 24)
+    (evm--create-region 7 7)
+    (evm--create-region 24 24)
+    (should (= (evm-region-count) 2))
+    ;; C deletes to end of line and enters insert mode
+    (evm-change-to-eol)
+    ;; Buffer should have "alpha " on each line
+    (should (string= (buffer-string) "alpha \nalpha "))
+    ;; Cursors should be at position 7 and 14 (after "alpha ")
+    ;; NOT adjusted back to position 6 and 13
+    (should (equal (evm-test-positions) '(7 14)))
+    ;; Clean up insert mode
+    (evil-normal-state)))
+
 (ert-deftest evm-test-yank-line ()
   "Y should yank entire line at all cursors."
   (evm-test-with-buffer "foo bar\nbaz qux"
@@ -1155,6 +1173,47 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
   (should (string-match-p "P" (or (car (cdr (interactive-form 'evm-operator-delete))) "")))
   (should (string-match-p "P" (or (car (cdr (interactive-form 'evm-operator-change))) "")))
   (should (string-match-p "P" (or (car (cdr (interactive-form 'evm-operator-yank))) ""))))
+
+(ert-deftest evm-test-dw-does-not-cross-line-boundary ()
+  "dw should not delete newline character (like vim behavior)."
+  (evm-test-with-real-buffer "foo\nbar\nbaz"
+    ;; Start at beginning of "foo" (position 1)
+    (evm-activate)
+    (evm--create-region 1 1)
+    ;; Get motion range for "w" from position 1
+    ;; In vim, "w" from "foo" goes to "bar" on next line,
+    ;; but "dw" should only delete "foo" (not the newline)
+    (let ((range (evm--get-motion-range "w" 1)))
+      ;; Range should be (1 4) - from "f" to end of "foo"
+      ;; Not (1 5) which would include the newline
+      (should range)
+      (should (= (car range) 1))
+      ;; End should be at position 4 (end of "foo", before newline)
+      (should (= (cadr range) 4)))))
+
+(ert-deftest evm-test-dw-works-normally-within-line ()
+  "dw should work normally when next word is on same line."
+  (evm-test-with-real-buffer "foo bar baz"
+    (evm-activate)
+    (evm--create-region 1 1)
+    ;; Get motion range for "w" from position 1
+    ;; Next word "bar" is on same line, so range should include space
+    (let ((range (evm--get-motion-range "w" 1)))
+      (should range)
+      (should (= (car range) 1))
+      ;; End should be at position 5 (start of "bar")
+      (should (= (cadr range) 5)))))
+
+(ert-deftest evm-test-dW-does-not-cross-line-boundary ()
+  "dW should not delete newline character (like vim behavior)."
+  (evm-test-with-real-buffer "foo\nbar"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (let ((range (evm--get-motion-range "W" 1)))
+      (should range)
+      (should (= (car range) 1))
+      ;; End should be at position 4 (end of line)
+      (should (= (cadr range) 4)))))
 
 (provide 'evm-test)
 ;;; evm-test.el ends here
