@@ -1313,7 +1313,8 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
   (evm-test-with-buffer "foo\nbar"
     (evm-activate)
     (evm--create-region 1 1)
-    (let ((tab-width 2))
+    (let ((tab-width 2)
+          (indent-tabs-mode nil))
       (evm--execute-indent-line 'indent 1))
     (should (string-match-p "^  foo" (buffer-string)))))
 
@@ -1490,6 +1491,57 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     ;; Paste from register a (replaces selections)
     (evm-paste-from-register ?a)
     (should (string= (buffer-string) "foo bar"))))
+
+(ert-deftest evm-test-yank-via-evil-this-register ()
+  "evm-yank should use evil-this-register when set."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (should (evm-extend-mode-p))
+    ;; Simulate pressing \"a before y
+    (setq evil-this-register ?b)
+    (evm-yank)
+    ;; evil-this-register should be cleared
+    (should-not evil-this-register)
+    ;; Contents should be in register b
+    (let ((contents (gethash ?b (evm-state-registers evm--state))))
+      (should contents)
+      (should (= (length contents) 2))
+      (should (string= (car contents) "foo")))))
+
+(ert-deftest evm-test-paste-via-evil-this-register ()
+  "evm-paste-after should use evil-this-register when set."
+  (evm-test-with-buffer "XXX YYY"
+    (evm-activate)
+    ;; Store in register c
+    (puthash ?c '("foo" "bar") (evm-state-registers evm--state))
+    ;; Create cursors
+    (evm--create-region 1 4 nil)
+    (evm--create-region 5 8 nil)
+    (setf (evm-state-mode evm--state) 'extend)
+    (evm--update-all-overlays)
+    ;; Simulate pressing \"c before p
+    (setq evil-this-register ?c)
+    (evm-paste-after)
+    ;; evil-this-register should be cleared
+    (should-not evil-this-register)
+    (should (string= (buffer-string) "foo bar"))))
+
+(ert-deftest evm-test-paste-in-cursor-mode ()
+  "p in cursor mode should insert without deleting."
+  (evm-test-with-buffer "ab\ncd"
+    (evm-activate)
+    ;; Store content
+    (puthash ?\" '("X" "Y") (evm-state-registers evm--state))
+    ;; Create cursors at 'a' and 'c'
+    (goto-char 1)
+    (evm--create-region 1 1 nil)  ; cursor at 'a'
+    (evm--create-region 4 4 nil)  ; cursor at 'c'
+    ;; Should be in cursor mode (beg=end)
+    (should (evm-cursor-mode-p))
+    (evm-paste-after)
+    ;; Should insert after cursor positions: aXb, cYd
+    (should (string= (buffer-string) "aXb\ncYd"))))
 
 ;;; Multiline mode tests (9.2)
 

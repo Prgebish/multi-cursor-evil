@@ -108,6 +108,11 @@
 ;; Undo (only in cursor mode, extend mode uses u for downcase)
 (define-key evm-cursor-map (kbd "u") #'evm-undo)
 (define-key evm-cursor-map (kbd "C-r") #'evm-redo)
+;; Paste in cursor mode
+(define-key evm-cursor-map (kbd "p") #'evm-paste-after)
+(define-key evm-cursor-map (kbd "P") #'evm-paste-before)
+;; Pass " to evil for register selection (e.g. "ay, "ap)
+(define-key evm-cursor-map (kbd "\"") #'evil-use-register)
 
 ;; Extend mode specific
 (define-key evm-extend-map (kbd "y") #'evm-yank)
@@ -122,10 +127,8 @@
 (define-key evm-extend-map (kbd "~") #'evm-toggle-case)
 (define-key evm-extend-map (kbd "C-n") #'evm-add-next-match)
 (define-key evm-extend-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
-;; Register access with " prefix
-(define-key evm-extend-map (kbd "\" y") #'evm-yank-to-register)
-(define-key evm-extend-map (kbd "\" d") #'evm-delete-to-register)
-(define-key evm-extend-map (kbd "\" p") #'evm-paste-from-register)
+;; Pass " to evil for register selection (e.g. "ay, "ap)
+(define-key evm-extend-map (kbd "\"") #'evil-use-register)
 
 ;; Set parent keymaps
 (set-keymap-parent evm-cursor-map evm-mode-map)
@@ -406,22 +409,26 @@ We adjust all markers the same way."
 (defun evm--post-command ()
   "Called after each command."
   (when (evm-active-p)
-    ;; After undo command, resync regions with pattern
-    (when (and (memq this-command '(undo evil-undo undo-tree-undo undo-fu-only-undo))
-               (car (evm-state-patterns evm--state)))
-      (evm--resync-regions-to-pattern))
-    ;; Ensure overlays are in sync with markers after buffer modifications
-    ;; (fixes visual glitches after undo where overlays drift from markers)
-    (let ((current-tick (buffer-modified-tick)))
-      (unless (eql current-tick evm--last-buffer-tick)
-        (setq evm--last-buffer-tick current-tick)
-        (evm--update-all-overlays)))
-    ;; Keep real cursor at leader visual position
-    ;; In extend mode, this is on the last selected char (end-1), not after
-    (when-let ((leader (evm--leader-region)))
-      (let ((leader-pos (evm--region-visual-cursor-pos leader)))
-        (unless (= (point) leader-pos)
-          (goto-char leader-pos))))))
+    (let ((is-undo-command (memq this-command
+                                  '(undo evil-undo undo-tree-undo undo-fu-only-undo
+                                    evm-undo evm-redo))))
+      ;; After undo command, resync regions with pattern
+      (when (and is-undo-command
+                 (car (evm-state-patterns evm--state)))
+        (evm--resync-regions-to-pattern))
+      ;; Ensure overlays are in sync with markers after buffer modifications
+      ;; (fixes visual glitches after undo where overlays drift from markers)
+      (let ((current-tick (buffer-modified-tick)))
+        (unless (eql current-tick evm--last-buffer-tick)
+          (setq evm--last-buffer-tick current-tick)
+          (evm--update-all-overlays)))
+      ;; Keep real cursor at leader visual position
+      ;; BUT don't move cursor after undo - let undo restore position naturally
+      (unless is-undo-command
+        (when-let ((leader (evm--leader-region)))
+          (let ((leader-pos (evm--region-visual-cursor-pos leader)))
+            (unless (= (point) leader-pos)
+              (goto-char leader-pos))))))))
 
 (defun evm--adjust-cursor-pos (pos)
   "Adjust POS like evil-adjust-cursor does.
@@ -1005,17 +1012,28 @@ Respects current restriction if active."
 ;;; Extend mode editing commands
 
 (defun evm-yank ()
-  "Yank content of all regions to VM register."
+  "Yank content of all regions to VM register.
+Uses `evil-this-register' if set (via \"a prefix), otherwise default register."
   (interactive)
   (when (evm-extend-mode-p)
-    (let ((contents (mapcar (lambda (r)
-                              (buffer-substring-no-properties
-                               (marker-position (evm-region-beg r))
-                               (marker-position (evm-region-end r))))
-                            (evm-state-regions evm--state))))
-      (puthash ?\" contents (evm-state-registers evm--state))
+    (let* ((register (or evil-this-register ?\"))
+           (contents (mapcar (lambda (r)
+                               (buffer-substring-no-properties
+                                (marker-position (evm-region-beg r))
+                                (marker-position (evm-region-end r))))
+                             (evm-state-regions evm--state))))
+      ;; Handle uppercase registers (append mode)
+      (if (and (>= register ?A) (<= register ?Z))
+          (let* ((lower (downcase register))
+                 (existing (gethash lower (evm-state-registers evm--state))))
+            (puthash lower (append existing contents)
+                     (evm-state-registers evm--state))
+            (message "Appended %d regions to register '%c'" (length contents) lower))
+        (puthash register contents (evm-state-registers evm--state))
+        (message "Yanked %d regions to register '%c'" (length contents) register))
       (kill-new (car contents))
-      (message "Yanked %d regions" (length contents)))))
+      ;; Clear evil-this-register after use
+      (setq evil-this-register nil))))
 
 (defun evm-delete ()
   "Delete content of all regions."
@@ -1046,30 +1064,43 @@ Respects current restriction if active."
     (evil-insert-state)))
 
 (defun evm-paste-after ()
-  "Paste VM register after regions."
+  "Paste VM register after cursor positions.
+In extend mode, replaces selected regions. In cursor mode, inserts after cursor."
   (interactive)
-  (when (evm-extend-mode-p)
+  (when (evm-active-p)
     (evm--paste-impl t)))
 
 (defun evm-paste-before ()
-  "Paste VM register before regions."
+  "Paste VM register before cursor positions.
+In extend mode, replaces selected regions. In cursor mode, inserts before cursor."
   (interactive)
-  (when (evm-extend-mode-p)
+  (when (evm-active-p)
     (evm--paste-impl nil)))
 
-(defun evm--paste-impl (_after)
-  "Paste implementation. _AFTER determines position (not yet used)."
+(defun evm--paste-impl (after)
+  "Paste implementation. AFTER determines position (t=after cursor, nil=before).
+Uses `evil-this-register' if set (via \"a prefix), otherwise default register.
+In extend mode, replaces selected regions. In cursor mode, inserts at cursor."
   (evm--push-undo-snapshot)
-  (let* ((contents (gethash ?\" (evm-state-registers evm--state)))
+  (let* ((register (or evil-this-register ?\"))
+         ;; Normalize uppercase to lowercase for lookup
+         (lookup-reg (if (and (>= register ?A) (<= register ?Z))
+                         (downcase register)
+                       register))
+         (contents (gethash lookup-reg (evm-state-registers evm--state)))
          (sorted-regions (evm--regions-by-position))
          (num-regions (length sorted-regions))
-         (num-contents (length contents)))
+         (num-contents (length contents))
+         (extend-mode-p (evm-extend-mode-p)))
+    ;; Clear evil-this-register after use
+    (setq evil-this-register nil)
     (unless contents
-      (user-error "Nothing to paste"))
-    ;; Delete current content first (from end to beginning to preserve positions)
-    (dolist (region (evm--regions-by-position-reverse))
-      (delete-region (marker-position (evm-region-beg region))
-                     (marker-position (evm-region-end region))))
+      (user-error "Register '%c' is empty" register))
+    ;; In extend mode, delete current content first (from end to beginning)
+    (when extend-mode-p
+      (dolist (region (evm--regions-by-position-reverse))
+        (delete-region (marker-position (evm-region-beg region))
+                       (marker-position (evm-region-end region)))))
     ;; Insert new content (sorted by position, matching contents order)
     (cl-loop for region in sorted-regions
              for idx from 0
@@ -1082,9 +1113,13 @@ Respects current restriction if active."
                              (nth (mod idx num-contents) contents)))
              do (save-excursion
                   (goto-char (marker-position (evm-region-beg region)))
+                  ;; In cursor mode with 'after', move past cursor char
+                  (when (and after (not extend-mode-p))
+                    (forward-char 1))
                   (insert content)))
     (evm--enter-cursor-mode)
-    (evm--update-keymap)))
+    (evm--update-keymap)
+    (message "Pasted from register '%c'" register)))
 
 (defun evm-flip-direction ()
   "Flip direction of all regions (swap cursor and anchor)."
@@ -1168,15 +1203,6 @@ Spaces are inserted before the start of each region."
             (when (> spaces-needed 0)
               (insert (make-string spaces-needed ?\s)))))))
     (evm--update-all-overlays)))
-
-(defun evm-reselect-last ()
-  "Reselect last cursors."
-  (interactive)
-  (when-let ((last (and evm--state (evm-state-last-regions evm--state))))
-    (unless (evm-active-p)
-      (evm-activate))
-    (dolist (pos-pair last)
-      (evm--create-region (car pos-pair) (car pos-pair)))))
 
 ;;; Run at Cursors commands
 
@@ -2053,18 +2079,19 @@ In visual-char mode: creates a cursor at start and end of selection."
 ;;; Undo/Redo with cursor restoration (Phase 9.3)
 
 (defun evm-undo ()
-  "Undo last change and resync cursor positions to pattern."
+  "Undo last change and resync cursor positions to pattern.
+Preserves cursor position (unlike standard evil-undo which jumps to change location)."
   (interactive)
   (when (evm-active-p)
-    ;; Call evil-undo which handles undo-tree properly
-    (evil-undo 1)
-    ;; Resync regions to pattern matches
-    (when (car (evm-state-patterns evm--state))
-      (evm--resync-regions-to-pattern))
-    ;; Move to leader
-    (when-let ((leader (evm--leader-region)))
-      (goto-char (evm--region-cursor-pos leader)))
-    (evm--update-all-overlays)))
+    (let ((pos-before (point)))
+      ;; Call evil-undo which handles undo-tree properly
+      (evil-undo 1)
+      ;; Resync regions to pattern matches
+      (when (car (evm-state-patterns evm--state))
+        (evm--resync-regions-to-pattern))
+      (evm--update-all-overlays)
+      ;; Restore cursor position (evil-undo moves it to change location)
+      (goto-char (min pos-before (point-max))))))
 
 (defun evm-redo ()
   "Redo (not yet implemented - use evil-redo or C-r)."
@@ -2229,15 +2256,20 @@ When enabled, allows search patterns to span multiple lines."
 ;;;###autoload
 (defun evm-setup-global-keys ()
   "Setup global keybindings for evm activation."
-  (evil-define-key 'normal 'global (kbd "C-n") #'evm-find-word)
-  (evil-define-key 'normal 'global (kbd "<C-down>") #'evm-add-cursor-down)
-  (evil-define-key 'normal 'global (kbd "<C-up>") #'evm-add-cursor-up)
-  ;; Mouse bindings need direct definition in state map
+  ;; Remove conflicting global bindings
+  (global-unset-key (kbd "<C-down>"))
+  (global-unset-key (kbd "<C-up>"))
+  ;; Use define-key directly on evil state maps for reliable binding
+  (define-key evil-normal-state-map (kbd "C-n") #'evm-find-word)
+  (define-key evil-normal-state-map (kbd "<C-down>") #'evm-add-cursor-down)
+  (define-key evil-normal-state-map (kbd "<C-up>") #'evm-add-cursor-up)
   (define-key evil-normal-state-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
+  ;; Reselect last (works when evm is not active)
+  (define-key evil-normal-state-map (kbd "\\ g S") #'evm-reselect-last)
   ;; Visual mode bindings
-  (evil-define-key 'visual 'global (kbd "C-n") #'evm-find-word)
-  (evil-define-key 'visual 'global (kbd "\\ r") #'evm-toggle-restrict)
-  (evil-define-key 'visual 'global (kbd "\\ c") #'evm-visual-cursors))
+  (define-key evil-visual-state-map (kbd "C-n") #'evm-find-word)
+  (define-key evil-visual-state-map (kbd "\\ r") #'evm-toggle-restrict)
+  (define-key evil-visual-state-map (kbd "\\ c") #'evm-visual-cursors))
 
 (provide 'evm)
 ;;; evm.el ends here
