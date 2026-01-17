@@ -259,11 +259,17 @@ Returns the created region."
 
 ;;; Overlay management
 
+(defvar evm--insert-active)  ; defined in evm.el
+
 (defun evm--create-overlay-for-region (region)
   "Create overlay(s) for REGION based on current mode."
-  (if (evm-extend-mode-p)
-      (evm--create-region-overlay region)
-    (evm--create-cursor-overlay region)))
+  ;; In insert mode, don't create overlay for leader (evil cursor shows position)
+  (unless (and (boundp 'evm--insert-active)
+               evm--insert-active
+               (evm--leader-p region))
+    (if (evm-extend-mode-p)
+        (evm--create-region-overlay region)
+      (evm--create-cursor-overlay region))))
 
 (defun evm--create-cursor-overlay (region)
   "Create cursor overlay for REGION."

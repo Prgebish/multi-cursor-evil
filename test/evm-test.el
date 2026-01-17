@@ -863,19 +863,38 @@
     ;; First cursor at point (1), second at click position (5)
     (should (= (evm-region-count) 2))))
 
-(ert-deftest evm-test-add-cursor-at-click-moves-leader-if-exists ()
-  "M-click on existing cursor should move leader."
+(ert-deftest evm-test-add-cursor-at-click-removes-existing ()
+  "M-click on existing cursor should remove it (toggle behavior)."
   (evm-test-with-buffer "foo bar baz"
     (evm-activate)
     (evm--create-region 1 1)
     (evm--create-region 5 5)
     (should (= (evm-region-count) 2))
-    ;; Click on position 5 (existing cursor)
+    ;; Click on position 5 (existing non-leader cursor) - should remove it
     (let ((event `(mouse-1 (,(selected-window) 5 (0 . 0) 0))))
       (evm-add-cursor-at-click event))
-    ;; Should still have 2 cursors, leader moved
+    ;; Should now have 1 cursor
+    (should (= (evm-region-count) 1))
+    (should (= (evm-test-leader-pos) 1))))
+
+(ert-deftest evm-test-add-cursor-at-click-removes-leader-on-repeat ()
+  "M-click on leader cursor should remove it (toggle behavior)."
+  (evm-test-with-buffer "foo bar baz"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm--create-region 5 5)
     (should (= (evm-region-count) 2))
-    (should (= (evm-test-leader-pos) 5))))
+    ;; Set leader to position 5
+    (let ((cursor-at-5 (cl-find-if (lambda (r) (= (evm--region-cursor-pos r) 5))
+                                    (evm-state-regions evm--state))))
+      (evm--set-leader cursor-at-5))
+    (should (= (evm-test-leader-pos) 5))
+    ;; Click on leader position 5 - should remove it
+    (let ((event `(mouse-1 (,(selected-window) 5 (0 . 0) 0))))
+      (evm-add-cursor-at-click event))
+    ;; Should now have 1 cursor, leader moved to remaining one
+    (should (= (evm-region-count) 1))
+    (should (= (evm-test-leader-pos) 1))))
 
 (ert-deftest evm-test-align ()
   "Test that align inserts spaces before region start."

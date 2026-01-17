@@ -257,7 +257,9 @@ Used to prevent infinite recursion.")
       (setcdr entry nil))
     ;; Add hooks for real-time replication
     (add-hook 'after-change-functions #'evm--insert-after-change nil t)
-    (add-hook 'evil-insert-state-exit-hook #'evm--stop-insert-mode nil t)))
+    (add-hook 'evil-insert-state-exit-hook #'evm--stop-insert-mode nil t)
+    ;; Update overlays to ensure they're positioned correctly for insert mode
+    (evm--update-all-overlays)))
 
 (defun evm--insert-after-change (beg end old-len)
   "Replicate changes at leader to all other cursors in real-time.
@@ -314,12 +316,24 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
     (setq evm--insert-active nil
           evm--insert-replicating nil
           evm--insert-last-point nil)
-    ;; Update overlays
-    (evm--update-all-overlays)
+    ;; Add one-shot hook to sync after evil adjusts point in normal state
+    (add-hook 'evil-normal-state-entry-hook #'evm--sync-after-insert-exit nil t)
     ;; Restore evm keymaps
     (when-let ((entry (assq 'evm-mode minor-mode-map-alist)))
       (setcdr entry evm-mode-map))
     (evm--update-keymap)))
+
+(defun evm--sync-after-insert-exit ()
+  "Sync cursors after exiting insert mode.
+Evil moves point back by 1 when exiting insert (unless at bol).
+We adjust all markers the same way."
+  (remove-hook 'evil-normal-state-entry-hook #'evm--sync-after-insert-exit t)
+  (when (evm-active-p)
+    ;; Adjust all cursors like evil adjusts point on insert exit
+    (dolist (region (evm-state-regions evm--state))
+      (let ((pos (evm--region-cursor-pos region)))
+        (evm--region-set-cursor-pos region (evm--adjust-cursor-pos pos))))
+    (evm--update-all-overlays)))
 
 (defun evm--before-change (_beg _end)
   "Called before buffer modification."
@@ -377,6 +391,16 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
       (let ((leader-pos (evm--region-visual-cursor-pos leader)))
         (unless (= (point) leader-pos)
           (goto-char leader-pos))))))
+
+(defun evm--adjust-cursor-pos (pos)
+  "Adjust POS like evil-adjust-cursor does.
+In normal state, cursor can't be past the last character of a non-empty line."
+  (save-excursion
+    (goto-char pos)
+    (if (and (= pos (line-end-position))
+             (not (= (line-beginning-position) (line-end-position)))) ; non-empty line
+        (1- pos)
+      pos)))
 
 (defun evm--resync-regions-to-pattern ()
   "Resync region positions to match pattern occurrences in buffer.
@@ -729,8 +753,10 @@ Respects current restriction if active."
 
 ;;;###autoload
 (defun evm-add-cursor-at-click (event)
-  "Add a cursor at mouse click position.
-EVENT is the mouse event."
+  "Add a cursor at mouse click position, or remove if clicking on existing cursor.
+EVENT is the mouse event.
+- Click on empty position: create new cursor
+- Click on existing cursor (any): remove it"
   (interactive "e")
   (let ((pos (posn-point (event-start event))))
     (when pos
@@ -744,10 +770,19 @@ EVENT is the mouse event."
                          (= (evm--region-cursor-pos r) pos))
                        (evm-state-regions evm--state))))
         (if existing
-            ;; Move leader to existing cursor
-            (progn
-              (evm--set-leader existing)
-              (goto-char pos))
+            ;; Cursor exists - remove it (toggle behavior)
+            (if (= (evm-region-count) 1)
+                ;; Last cursor - exit evm
+                (evm-exit)
+              ;; Remove cursor and select another if needed
+              (let ((was-leader (eq existing (evm--leader-region))))
+                (evm--delete-region existing)
+                (when was-leader
+                  ;; Select first remaining cursor as new leader
+                  (let ((new-leader (car (evm-state-regions evm--state))))
+                    (when new-leader
+                      (evm--set-leader new-leader)
+                      (goto-char (evm--region-cursor-pos new-leader)))))))
           ;; Create new cursor at click position
           (let ((new-region (evm--create-region pos pos)))
             (evm--set-leader new-region)
@@ -1457,7 +1492,12 @@ Applies the operator to all cursors."
                       (when text
                         (push text texts))
                       ;; Update cursor position
-                      (evm--region-set-cursor-pos region (point))))
+                      ;; For delete/yank (staying in normal mode), adjust like evil does
+                      ;; For change (entering insert mode), don't adjust
+                      (let ((new-pos (if (eq operator 'change)
+                                         (point)
+                                       (evm--adjust-cursor-pos (point)))))
+                        (evm--region-set-cursor-pos region new-pos))))
                 (add-hook 'post-command-hook #'evm--post-command nil t)))
             ;; Save yanked/deleted text to VM register
             (when texts
@@ -1521,19 +1561,24 @@ Examples: yw (yank word), yiw (yank inner word), 2yw (yank 2 words)."
           (progn
             (let ((regions (reverse (evm-state-regions evm--state)))
                   (inhibit-modification-hooks t))
-              (dolist (region regions)
-                (goto-char (evm--region-cursor-pos region))
-                (let ((beg (point))
-                      (end (line-end-position)))
-                  (when (> end beg)
-                    (push (buffer-substring-no-properties beg end) texts)
-                    (delete-region beg end))
-                  (evm--region-set-cursor-pos region (point)))))
+              (remove-hook 'post-command-hook #'evm--post-command t)
+              (unwind-protect
+                  (dolist (region regions)
+                    (goto-char (evm--region-cursor-pos region))
+                    (let ((beg (point))
+                          (end (line-end-position)))
+                      (when (> end beg)
+                        (push (buffer-substring-no-properties beg end) texts)
+                        (delete-region beg end))
+                      ;; Adjust position like evil does in normal state
+                      (evm--region-set-cursor-pos region (evm--adjust-cursor-pos (point)))))
+                (add-hook 'post-command-hook #'evm--post-command nil t)))
             (when texts
               (puthash ?\" (nreverse texts) (evm-state-registers evm--state))
               (kill-new (car texts))))
         (undo-amalgamate-change-group undo-handle)))
     (evm--clamp-markers)
+    (evm--check-and-merge-overlapping)
     (evm--update-all-overlays)
     (when-let ((leader (evm--leader-region)))
       (goto-char (evm--region-cursor-pos leader)))))
