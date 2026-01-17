@@ -49,44 +49,45 @@
   - [x] 7.2 Run Macro (\\@)
   - [x] 7.3 Run Ex (\\:)
 
-- [ ] Phase 8: Operators with Motions
+- [x] Phase 8: Operators with Motions
   Реализация операторов d, c, y с motions напрямую (как в vim-visual-multi).
   Это основной способ работы — \\z остаётся как fallback для редких команд.
 
-  - [ ] 8.1 Инфраструктура операторов
-    - [ ] Парсер motions (single: h,j,k,l,w,e,b,$,^,0; double: i,a,f,t,g + char)
-    - [ ] Функция `evm--run-operator-with-motion` — выполнить оператор на всех курсорах
-    - [ ] Поддержка counts (d3w, 2dw)
+  - [x] 8.1 Инфраструктура операторов
+    - [x] Парсер motions (single: h,j,k,l,w,e,b,$,^,0; double: i,a,f,t,g + char)
+    - [x] Функция `evm--run-operator-with-motion` — выполнить оператор на всех курсорах
+    - [x] Поддержка counts (d3w, 2dw)
 
-  - [ ] 8.2 Delete operator (d)
-    - [ ] `d` в cursor mode → ждёт motion, выполняет delete
-    - [ ] `dw`, `de`, `db` — delete word motions
-    - [ ] `d$`, `d^`, `d0` — delete to line boundaries
-    - [ ] `dd` — delete line
-    - [ ] `diw`, `daw` — delete inner/a word (text objects)
-    - [ ] `di"`, `da"`, `di(`, `da(` — delete in/around quotes/parens
-    - [ ] `D` — delete to end of line (уже есть как `d$`)
+  - [x] 8.2 Delete operator (d)
+    - [x] `d` в cursor mode → ждёт motion, выполняет delete
+    - [x] `dw`, `de`, `db` — delete word motions
+    - [x] `d$`, `d^`, `d0` — delete to line boundaries
+    - [x] `dd` — delete line
+    - [x] `diw`, `daw` — delete inner/a word (text objects)
+    - [x] `di"`, `da"`, `di(`, `da(` — delete in/around quotes/parens
+    - [x] `D` — delete to end of line
+    - [x] `dw` не удаляет newline (vim-like behavior)
 
-  - [ ] 8.3 Change operator (c)
-    - [ ] `c` в cursor mode → delete + enter insert
-    - [ ] `cw`, `ce`, `cb` — change word motions
-    - [ ] `c$`, `c^`, `c0` — change to line boundaries
-    - [ ] `cc` — change line
-    - [ ] `ciw`, `caw` — change inner/a word
-    - [ ] `ci"`, `ca"`, `ci(`, `ca(` — change in/around
-    - [ ] `C` — change to end of line
+  - [x] 8.3 Change operator (c)
+    - [x] `c` в cursor mode → delete + enter insert
+    - [x] `cw`, `ce`, `cb` — change word motions
+    - [x] `c$`, `c^`, `c0` — change to line boundaries
+    - [x] `cc` — change line
+    - [x] `ciw`, `caw` — change inner/a word
+    - [x] `ci"`, `ca"`, `ci(`, `ca(` — change in/around
+    - [x] `C` — change to end of line (с правильной позицией курсора)
 
-  - [ ] 8.4 Yank operator (y)
-    - [ ] `y` в cursor mode → ждёт motion, выполняет yank
-    - [ ] `yw`, `ye`, `yb` — yank word motions
-    - [ ] `y$`, `y^`, `y0` — yank to line boundaries
-    - [ ] `yy` — yank line
-    - [ ] `yiw`, `yaw` — yank inner/a word
-    - [ ] `Y` — yank line (или yank to eol, настраиваемо)
+  - [x] 8.4 Yank operator (y)
+    - [x] `y` в cursor mode → ждёт motion, выполняет yank
+    - [x] `yw`, `ye`, `yb` — yank word motions
+    - [x] `y$`, `y^`, `y0` — yank to line boundaries
+    - [x] `yy` — yank line
+    - [x] `yiw`, `yaw` — yank inner/a word
+    - [x] `Y` — yank line
 
-  - [ ] 8.5 Дополнительные операторы
-    - [ ] `J` — join lines (уже работает через run_normal)
-    - [ ] `>`, `<` — indent/outdent с motion (>>. <<)
+  - [ ] 8.5 Дополнительные операторы (отложено)
+    - [ ] `J` — join lines (работает через \\z)
+    - [ ] `>`, `<` — indent/outdent с motion
     - [ ] `gu`, `gU` — case change с motion
     - [ ] `g~` — toggle case с motion
 
@@ -119,7 +120,7 @@
 - Hydra/Transient меню — нет (отложили)
 
 ## Status
-**Phase 7** — ЗАВЕРШЕНО. **Phase 8** (Operators with Motions) — СЛЕДУЮЩАЯ.
+**Phase 8** — ЗАВЕРШЕНО (все основные операторы включая dd/cc/yy). Остались только дополнительные операторы (8.5).
 
 Реализовано:
 - `evm-core.el` — структуры данных, overlays, базовые операции, restrict to region
@@ -129,9 +130,12 @@
 - Переключение режимов: Tab
 - Navigation: ]/[ между курсорами, q/Q удаление
 - Поиск: C-n (find word), n/N, \\A (select all)
-- Cursor creation: C-Down/C-Up, M-click
+- Cursor creation: C-Down/C-Up, s-click (с toggle)
 - Restrict to region: visual selection + C-n, \\r (clear)
 - Run at cursors: \\z (normal), \\@ (macro), \\: (ex)
+- Operators: d/c/y с motions, text objects, counts
+- Shortcuts: D, C (с правильной позицией курсора), Y
+- Fix: dw/dW не удаляют newline (vim-like behavior)
 
 ## Files
 - `task_plan.md` — этот файл

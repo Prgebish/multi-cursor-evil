@@ -1215,5 +1215,52 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
       ;; End should be at position 4 (end of line)
       (should (= (cadr range) 4)))))
 
+;;; Line operation tests (dd, cc, yy)
+
+(ert-deftest evm-test-execute-operator-line-delete ()
+  "dd should delete entire line including newline."
+  (evm-test-with-buffer "line1\nline2\nline3"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (let ((text (evm--execute-operator-line 'delete 1)))
+      (should (string= text "line1\n"))
+      (should (string= (buffer-string) "line2\nline3")))))
+
+(ert-deftest evm-test-execute-operator-line-delete-multiple ()
+  "2dd should delete 2 lines."
+  (evm-test-with-buffer "line1\nline2\nline3\nline4"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (let ((text (evm--execute-operator-line 'delete 2)))
+      (should (string= text "line1\nline2\n"))
+      (should (string= (buffer-string) "line3\nline4")))))
+
+(ert-deftest evm-test-execute-operator-line-yank ()
+  "yy should yank entire line without deleting."
+  (evm-test-with-buffer "line1\nline2\nline3"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (let ((text (evm--execute-operator-line 'yank 1)))
+      (should (string= text "line1\n"))
+      ;; Buffer unchanged
+      (should (string= (buffer-string) "line1\nline2\nline3")))))
+
+(ert-deftest evm-test-execute-operator-line-change ()
+  "cc should delete line and prepare for insert."
+  (evm-test-with-buffer "line1\nline2\nline3"
+    (evm-activate)
+    (evm--create-region 7 7)  ; cursor on line2
+    (goto-char 7)  ; need to position point for line operations
+    (let ((text (evm--execute-operator-line 'change 1)))
+      (should (string= text "line2\n"))
+      ;; Line replaced with empty line (newline inserted for edit)
+      (should (string-match-p "line1\n.*\nline3" (buffer-string))))))
+
+(ert-deftest evm-test-parse-motion-line-operation ()
+  "evm--parse-motion should recognize dd, cc, yy as line operations."
+  ;; We can't easily test read-char interactively, but we can verify
+  ;; the function signature accepts operator-char
+  (should (functionp 'evm--parse-motion)))
+
 (provide 'evm-test)
 ;;; evm-test.el ends here

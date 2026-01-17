@@ -162,6 +162,23 @@ Uses `emulation-mode-map-alists' to override evil bindings."
           (delq 'evm--emulation-alist emulation-mode-map-alists))
     (push 'evm--emulation-alist emulation-mode-map-alists)))
 
+;;; Region sorting helpers
+
+(defun evm--regions-by-position ()
+  "Return regions sorted by buffer position (beginning to end)."
+  (sort (copy-sequence (evm-state-regions evm--state))
+        (lambda (a b)
+          (< (evm--region-cursor-pos a)
+             (evm--region-cursor-pos b)))))
+
+(defun evm--regions-by-position-reverse ()
+  "Return regions sorted by buffer position (end to beginning).
+Use this for buffer modifications to avoid position shifts affecting earlier regions."
+  (sort (copy-sequence (evm-state-regions evm--state))
+        (lambda (a b)
+          (> (evm--region-cursor-pos a)
+             (evm--region-cursor-pos b)))))
+
 ;;; Activation/Deactivation
 
 (defun evm-activate ()
@@ -169,18 +186,22 @@ Uses `emulation-mode-map-alists' to override evil bindings."
   (interactive)
   (unless evm--state
     (setq evm--state (make-evm-state)))
-  (setf (evm-state-active-p evm--state) t
-        (evm-state-mode evm--state) 'cursor
-        (evm-state-regions evm--state) nil
-        (evm-state-id-counter evm--state) 0
-        (evm-state-leader-id evm--state) nil
-        (evm-state-patterns evm--state) nil
-        (evm-state-search-direction evm--state) 1
-        (evm-state-multiline-p evm--state) nil
-        (evm-state-whole-word-p evm--state) t
-        (evm-state-case-fold-p evm--state) nil
-        (evm-state-undo-snapshots evm--state) nil
-        (evm-state-registers evm--state) (make-hash-table :test 'eq))
+  ;; Preserve registers across sessions
+  (let ((existing-registers (evm-state-registers evm--state)))
+    (setf (evm-state-active-p evm--state) t
+          (evm-state-mode evm--state) 'cursor
+          (evm-state-regions evm--state) nil
+          (evm-state-id-counter evm--state) 0
+          (evm-state-leader-id evm--state) nil
+          (evm-state-patterns evm--state) nil
+          (evm-state-search-direction evm--state) 1
+          (evm-state-multiline-p evm--state) nil
+          (evm-state-whole-word-p evm--state) t
+          (evm-state-case-fold-p evm--state) nil
+          (evm-state-undo-snapshots evm--state) nil
+          ;; Keep existing registers or create new hash table
+          (evm-state-registers evm--state) (or existing-registers
+                                               (make-hash-table :test 'eq))))
   (evm-mode 1)
   (evil-normal-state)
   ;; Add hooks
@@ -967,7 +988,7 @@ Respects current restriction if active."
     (evm-yank)
     ;; Delete from end to beginning (inhibit hooks during batch delete)
     (let ((inhibit-modification-hooks t)
-          (regions (reverse (evm-state-regions evm--state))))
+          (regions (evm--regions-by-position-reverse)))
       (dolist (region regions)
         (delete-region (marker-position (evm-region-beg region))
                        (marker-position (evm-region-end region)))))
@@ -1002,18 +1023,17 @@ Respects current restriction if active."
   "Paste implementation. _AFTER determines position (not yet used)."
   (evm--push-undo-snapshot)
   (let* ((contents (gethash ?\" (evm-state-registers evm--state)))
-         (regions (evm-state-regions evm--state))
-         (num-regions (length regions))
+         (sorted-regions (evm--regions-by-position))
+         (num-regions (length sorted-regions))
          (num-contents (length contents)))
     (unless contents
       (user-error "Nothing to paste"))
-    ;; Delete current content first
-    (let ((reversed (reverse regions)))
-      (dolist (region reversed)
-        (delete-region (marker-position (evm-region-beg region))
-                       (marker-position (evm-region-end region)))))
-    ;; Insert new content
-    (cl-loop for region in (evm-state-regions evm--state)
+    ;; Delete current content first (from end to beginning to preserve positions)
+    (dolist (region (evm--regions-by-position-reverse))
+      (delete-region (marker-position (evm-region-beg region))
+                     (marker-position (evm-region-end region))))
+    ;; Insert new content (sorted by position, matching contents order)
+    (cl-loop for region in sorted-regions
              for idx from 0
              for content = (cond
                             ((= num-contents num-regions)
@@ -1103,7 +1123,7 @@ Spaces are inserted before the start of each region."
           (goto-char (marker-position (evm-region-beg region)))
           (setq max-col (max max-col (current-column)))))
       ;; Add spaces before region starts to align
-      (dolist (region (reverse (evm-state-regions evm--state)))
+      (dolist (region (evm--regions-by-position-reverse))
         (save-excursion
           (goto-char (marker-position (evm-region-beg region)))
           (let ((spaces-needed (- max-col (current-column))))
@@ -1174,7 +1194,7 @@ If CMD is nil, prompt for input."
 Processes from end to beginning to preserve positions.
 If UPDATE-POSITIONS is non-nil, update cursor positions to point after FN.
 Updates overlays after execution."
-  (let* ((regions (reverse (evm-state-regions evm--state)))
+  (let* ((regions (evm--regions-by-position-reverse))
          (inhibit-modification-hooks t))
     ;; Temporarily disable post-command-hook to prevent cursor jumping to leader
     (remove-hook 'post-command-hook #'evm--post-command t)
@@ -1252,7 +1272,7 @@ If evm active with restriction: clear it."
 FN is called with point at each cursor, from end to beginning.
 If UPDATE-MARKERS is non-nil, update each cursor's marker to point
 after FN completes (useful for commands like o/O that move point)."
-  (let ((regions (reverse (evm-state-regions evm--state))))
+  (let ((regions (evm--regions-by-position-reverse)))
     (dolist (region regions)
       (if update-markers
           ;; Don't use save-excursion - we want to capture the new position
@@ -1308,11 +1328,13 @@ Returns (count . next-char) where count is nil or a number."
         (setq char (read-char)))
       (cons count char))))
 
-(defun evm--parse-motion ()
+(defun evm--parse-motion (&optional operator-char)
   "Parse a motion from user input.
-Returns a plist (:keys STRING :count NUMBER) or nil on cancel.
+Returns a plist (:keys STRING :count NUMBER :line BOOL) or nil on cancel.
 :keys is the motion key sequence (e.g., \"w\", \"iw\", \"f(\")
-:count is the motion count (e.g., 3 for 3w)"
+:count is the motion count (e.g., 3 for 3w)
+:line is t for line operations (dd, cc, yy)
+OPERATOR-CHAR is the operator character (d, c, y) to detect line operations."
   (let* ((count-and-char (evm--parse-count))
          (count (car count-and-char))
          (char (cdr count-and-char)))
@@ -1322,6 +1344,9 @@ Returns a plist (:keys STRING :count NUMBER) or nil on cancel.
      ;; ESC cancels
      ((= char 27)
       nil)
+     ;; Line operation: dd, cc, yy
+     ((and operator-char (= char operator-char))
+      (list :keys nil :count count :line t))
      ;; Single motions
      ((memq char evm--single-motions)
       (list :keys (string char) :count count))
@@ -1358,6 +1383,9 @@ Returns a plist (:keys STRING :count NUMBER) or nil on cancel.
           ;; Now parse the actual motion
           (cond
            ((= next-char 27) nil)
+           ;; Line operation with count: 3dd
+           ((and operator-char (= next-char operator-char))
+            (list :keys nil :count new-count :line t))
            ((memq next-char evm--single-motions)
             (list :keys (string next-char) :count new-count))
            ((memq next-char evm--double-motion-prefixes)
@@ -1448,6 +1476,41 @@ Returns (BEG END) or nil if motion failed."
       (when (> end beg)
         (list beg end)))))
 
+(defun evm--execute-operator-line (operator count)
+  "Execute line OPERATOR (dd, cc, yy) at current position.
+OPERATOR is one of \\='delete, \\='change, \\='yank.
+COUNT is number of lines (default 1).
+Returns the deleted/yanked text including newline, or nil."
+  (let* ((count (or count 1))
+         (beg (line-beginning-position))
+         (end (save-excursion
+                (forward-line (1- count))
+                (if (eobp)
+                    (point)  ; Last line without newline
+                  (forward-line 1)
+                  (point))))
+         text)
+    (when (> end beg)
+      (setq text (buffer-substring-no-properties beg end))
+      (pcase operator
+        ('delete
+         (delete-region beg end)
+         ;; Position cursor at beginning of line (or previous line if at eob)
+         (goto-char (min beg (point-max)))
+         (when (and (eobp) (not (bobp)))
+           (forward-line -1)))
+        ('change
+         (delete-region beg end)
+         ;; For cc: insert newline and position for insert
+         (unless (eobp)
+           (forward-line -1))
+         (end-of-line)
+         (newline-and-indent))
+        ('yank
+         ;; Just copy, don't delete
+         nil)))
+    text))
+
 (defun evm--execute-operator-motion (operator motion-keys count)
   "Execute OPERATOR with MOTION-KEYS at current position.
 OPERATOR is one of \\='delete, \\='change, \\='yank.
@@ -1471,16 +1534,18 @@ Returns the deleted/yanked text, or nil."
          nil)))
     text))
 
-(defun evm--run-operator-with-motion (operator &optional prefix-count)
+(defun evm--run-operator-with-motion (operator &optional prefix-count operator-char)
   "Run OPERATOR with a motion parsed from user input.
 OPERATOR is one of \\='delete, \\='change, \\='yank.
 PREFIX-COUNT is an optional count from prefix argument (for 2dw pattern).
+OPERATOR-CHAR is the operator key (d, c, y) for detecting line operations.
 Applies the operator to all cursors."
-  (let ((motion (evm--parse-motion)))
+  (let ((motion (evm--parse-motion operator-char)))
     (unless motion
       (message "Cancelled")
       (cl-return-from evm--run-operator-with-motion nil))
     (let ((keys (plist-get motion :keys))
+          (line-p (plist-get motion :line))
           ;; Combine prefix count with motion count: 2d3w = delete 6 words
           (count (let ((motion-count (plist-get motion :count))
                        (pre (and prefix-count (prefix-numeric-value prefix-count))))
@@ -1496,26 +1561,39 @@ Applies the operator to all cursors."
       (unwind-protect
           (progn
             ;; Execute at all cursors (from end to beginning)
-            (let ((regions (reverse (evm-state-regions evm--state)))
+            (let ((regions (evm--regions-by-position-reverse))
                   (inhibit-modification-hooks t))
               (remove-hook 'post-command-hook #'evm--post-command t)
               (unwind-protect
                   (dolist (region regions)
                     (goto-char (evm--region-cursor-pos region))
-                    (let ((text (evm--execute-operator-motion operator keys count)))
+                    (let ((text (if line-p
+                                    (evm--execute-operator-line operator count)
+                                  (evm--execute-operator-motion operator keys count))))
                       (when text
                         (push text texts))
                       ;; Update cursor position
-                      ;; For delete/yank (staying in normal mode), adjust like evil does
-                      ;; For change (entering insert mode), don't adjust
-                      (let ((new-pos (if (eq operator 'change)
-                                         (point)
-                                       (evm--adjust-cursor-pos (point)))))
+                      ;; For line operations: cursor goes to first non-blank
+                      ;; For delete/yank: adjust like evil does
+                      ;; For change: keep at deletion point for insert mode
+                      (let ((new-pos (cond
+                                      (line-p
+                                       (if (eq operator 'change)
+                                           (point)
+                                         (save-excursion
+                                           (back-to-indentation)
+                                           (point))))
+                                      ((eq operator 'change)
+                                       (point))
+                                      (t
+                                       (evm--adjust-cursor-pos (point))))))
                         (evm--region-set-cursor-pos region new-pos))))
                 (add-hook 'post-command-hook #'evm--post-command nil t)))
             ;; Save yanked/deleted text to VM register
+            ;; texts is already in correct order (beginning to end) because we
+            ;; iterated from end to beginning and used push
             (when texts
-              (puthash ?\" (nreverse texts) (evm-state-registers evm--state))
+              (puthash ?\" texts (evm-state-registers evm--state))
               ;; Also to kill-ring
               (kill-new (car texts)))
             ;; Clamp and update
@@ -1533,20 +1611,20 @@ Applies the operator to all cursors."
 (defun evm-operator-delete (count)
   "Delete operator: wait for motion, then delete at all cursors.
 COUNT is optional prefix argument for patterns like 2dw.
-Examples: dw (delete word), d3w (delete 3 words), 2dw (delete 2 words)."
+Examples: dw (delete word), d3w (delete 3 words), dd (delete line)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] d")
-    (evm--run-operator-with-motion 'delete count)))
+    (evm--run-operator-with-motion 'delete count ?d)))
 
 (defun evm-operator-change (count)
   "Change operator: delete with motion, then enter insert mode.
 COUNT is optional prefix argument for patterns like 2cw.
-Examples: cw (change word), ciw (change inner word), 2cw (change 2 words)."
+Examples: cw (change word), ciw (change inner word), cc (change line)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] c")
-    (let ((result (evm--run-operator-with-motion 'change count)))
+    (let ((result (evm--run-operator-with-motion 'change count ?c)))
       (when (and result (plist-get result :texts))
         ;; Enter insert mode
         (evm--start-insert-mode)
@@ -1555,11 +1633,11 @@ Examples: cw (change word), ciw (change inner word), 2cw (change 2 words)."
 (defun evm-operator-yank (count)
   "Yank operator: copy text defined by motion at all cursors.
 COUNT is optional prefix argument for patterns like 2yw.
-Examples: yw (yank word), yiw (yank inner word), 2yw (yank 2 words)."
+Examples: yw (yank word), yiw (yank inner word), yy (yank line)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] y")
-    (let ((result (evm--run-operator-with-motion 'yank count)))
+    (let ((result (evm--run-operator-with-motion 'yank count ?y)))
       (when result
         (message "Yanked %d regions" (length (plist-get result :texts)))))))
 
@@ -1574,7 +1652,7 @@ If FOR-CHANGE is non-nil, don't adjust cursor position (for C command)."
       (evm--push-undo-snapshot)
       (unwind-protect
           (progn
-            (let ((regions (reverse (evm-state-regions evm--state)))
+            (let ((regions (evm--regions-by-position-reverse))
                   (inhibit-modification-hooks t))
               (remove-hook 'post-command-hook #'evm--post-command t)
               (unwind-protect
@@ -1592,8 +1670,10 @@ If FOR-CHANGE is non-nil, don't adjust cursor position (for C command)."
                                                       (point)
                                                     (evm--adjust-cursor-pos (point))))))
                 (add-hook 'post-command-hook #'evm--post-command nil t)))
+            ;; texts is already in correct order (beginning to end) because we
+            ;; iterated from end to beginning and used push
             (when texts
-              (puthash ?\" (nreverse texts) (evm-state-registers evm--state))
+              (puthash ?\" texts (evm-state-registers evm--state))
               (kill-new (car texts))))
         (undo-amalgamate-change-group undo-handle)))
     (evm--clamp-markers)
@@ -1615,7 +1695,8 @@ If FOR-CHANGE is non-nil, don't adjust cursor position (for C command)."
   (interactive)
   (when (evm-cursor-mode-p)
     (let ((texts '()))
-      (dolist (region (evm-state-regions evm--state))
+      ;; Collect texts in position order (beginning to end)
+      (dolist (region (evm--regions-by-position))
         (save-excursion
           (goto-char (evm--region-cursor-pos region))
           (let ((beg (line-beginning-position))
