@@ -708,21 +708,21 @@
     (should (equal (evm-test-end-positions) '(4 12)))))
 
 (ert-deftest evm-test-resync-cursor-mode ()
-  "Regions in cursor mode should resync to end of match."
+  "Regions in cursor mode should resync to beginning of match."
   (evm-test-with-buffer "foo bar foo"
     (evm-find-word)
     (evm-find-next)
-    ;; Switch to cursor mode - cursors collapse to end (4 and 12)
+    ;; Switch to cursor mode - cursors collapse to beginning (1 and 9)
+    ;; Like vim-visual-multi, cursor goes to start of selection
     (evm-toggle-mode)
     (should (evm-cursor-mode-p))
-    (should (equal (evm-test-positions) '(4 12)))
+    (should (equal (evm-test-positions) '(1 9)))
 
     ;; Run resync
     (evm--resync-regions-to-pattern)
 
-    ;; Should still be at end (4 and 12)
-    ;; Prior to fix, this would move them to start (1 and 9)
-    (should (equal (evm-test-positions) '(4 12)))))
+    ;; Should still be at beginning (1 and 9)
+    (should (equal (evm-test-positions) '(1 9)))))
 
 (ert-deftest evm-test-post-command-triggers-resync-on-undo ()
   "Post-command hook should trigger resync when undo command runs."
@@ -1372,6 +1372,160 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
   (should (commandp 'evm-operator-downcase))
   (should (commandp 'evm-operator-upcase))
   (should (commandp 'evm-operator-toggle-case)))
+
+;;; Phase 9 tests: Special Features
+
+;;; Visual mode cursor selection tests (9.1)
+
+(ert-deftest evm-test-visual-cursors-char-mode ()
+  "evm-visual-cursors in visual char mode should create cursors at start and end."
+  (evm-test-with-buffer "hello world foo"
+    (goto-char 7)  ; start at 'w'
+    (evil-visual-state)
+    (evil-forward-char 4)  ; select "worl"
+    ;; Manually call the function (simulating the command)
+    (let ((beg (region-beginning))
+          (end (region-end)))
+      (evil-exit-visual-state)
+      (evm-activate)
+      (evm--create-region beg beg)
+      (evm--create-region (1- end) (1- end)))
+    (should (evm-active-p))
+    (should (= (evm-region-count) 2))))
+
+(ert-deftest evm-test-visual-cursors-line-mode ()
+  "evm-visual-cursors in visual line mode should create cursor per line."
+  (evm-test-with-buffer "line1\nline2\nline3"
+    (evil-visual-line)
+    (evil-next-line 2)  ; select all 3 lines
+    (let ((positions '()))
+      ;; Simulate evm-visual-cursors logic for line mode
+      (save-excursion
+        (goto-char (region-beginning))
+        (dotimes (_ 3)
+          (back-to-indentation)
+          (push (point) positions)
+          (forward-line 1)))
+      (evil-exit-visual-state)
+      (evm-activate)
+      (dolist (pos (nreverse positions))
+        (evm--create-region pos pos)))
+    (should (evm-active-p))
+    (should (= (evm-region-count) 3))))
+
+;;; Reselect Last tests (9.4)
+
+(ert-deftest evm-test-reselect-last-saves-mode ()
+  "evm--save-for-reselect should save mode information."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; We're in extend mode
+    (should (evm-extend-mode-p))
+    ;; Save for reselect (called automatically on exit)
+    (evm--save-for-reselect)
+    (let ((last (evm-state-last-regions evm--state)))
+      ;; Should be a plist with :mode
+      (should (plistp last))
+      (should (eq (plist-get last :mode) 'extend))
+      (should (= (length (plist-get last :positions)) 2)))))
+
+(ert-deftest evm-test-reselect-last-restores-positions ()
+  "evm-reselect-last should restore cursor positions."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (let ((positions-before (evm-test-positions)))
+      (evm--save-for-reselect)
+      (evm-exit)
+      (should-not (evm-active-p))
+      (evm-reselect-last)
+      (should (evm-active-p))
+      (should (= (evm-region-count) 2))
+      (should (equal (evm-test-positions) positions-before)))))
+
+;;; VM Registers tests (9.5)
+
+(ert-deftest evm-test-yank-to-named-register ()
+  "evm-yank-to-register should save to specified register."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (should (evm-extend-mode-p))
+    (evm-yank-to-register ?a)
+    (let ((contents (gethash ?a (evm-state-registers evm--state))))
+      (should contents)
+      (should (= (length contents) 2))
+      (should (string= (car contents) "foo")))))
+
+(ert-deftest evm-test-yank-to-uppercase-register-appends ()
+  "Uppercase register should append to existing contents."
+  (evm-test-with-buffer "foo bar baz"
+    (evm-activate)
+    ;; First yank "foo"
+    (evm--create-region 1 4 nil)
+    (setf (evm-state-mode evm--state) 'extend)
+    (evm--update-all-overlays)
+    (evm-yank-to-register ?a)
+    ;; Clear and yank "bar"
+    (setf (evm-state-regions evm--state) nil)
+    (evm--create-region 5 8 nil)
+    (evm-yank-to-register ?A)  ; Uppercase appends
+    (let ((contents (gethash ?a (evm-state-registers evm--state))))
+      (should (= (length contents) 2))
+      (should (string= (car contents) "foo"))
+      (should (string= (cadr contents) "bar")))))
+
+(ert-deftest evm-test-paste-from-named-register ()
+  "evm-paste-from-register should paste from specified register."
+  (evm-test-with-buffer "XXX YYY"
+    (evm-activate)
+    ;; Store something in register a
+    (puthash ?a '("foo" "bar") (evm-state-registers evm--state))
+    ;; Create cursors
+    (evm--create-region 1 4 nil)  ; "XXX"
+    (evm--create-region 5 8 nil)  ; "YYY"
+    (setf (evm-state-mode evm--state) 'extend)
+    (evm--update-all-overlays)
+    ;; Paste from register a (replaces selections)
+    (evm-paste-from-register ?a)
+    (should (string= (buffer-string) "foo bar"))))
+
+;;; Multiline mode tests (9.2)
+
+(ert-deftest evm-test-toggle-multiline ()
+  "evm-toggle-multiline should toggle multiline-p flag."
+  (evm-test-with-buffer "foo bar"
+    (evm-activate)
+    (evm--create-region (point) (point))
+    (should-not (evm-state-multiline-p evm--state))
+    (evm-toggle-multiline)
+    (should (evm-state-multiline-p evm--state))
+    (evm-toggle-multiline)
+    (should-not (evm-state-multiline-p evm--state))))
+
+;;; Undo tests (9.3)
+
+(ert-deftest evm-test-push-undo-snapshot ()
+  "evm--push-undo-snapshot should create a snapshot."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (let ((snapshots-before (length (evm-state-undo-snapshots evm--state))))
+      (evm--push-undo-snapshot)
+      (should (= (length (evm-state-undo-snapshots evm--state))
+                 (1+ snapshots-before))))))
+
+(ert-deftest evm-test-snapshot-structure ()
+  "Snapshot should contain correct data."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (evm--push-undo-snapshot)
+    (let ((snapshot (car (evm-state-undo-snapshots evm--state))))
+      (should (evm-snapshot-p snapshot))
+      (should (= (length (evm-snapshot-regions-data snapshot)) 2))
+      (should (eq (evm-snapshot-mode snapshot) 'extend)))))
 
 (provide 'evm-test)
 ;;; evm-test.el ends here

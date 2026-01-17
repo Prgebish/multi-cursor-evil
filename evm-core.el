@@ -417,10 +417,15 @@ In extend mode: moves the active end."
 ;;; Mode switching
 
 (defun evm--enter-cursor-mode ()
-  "Enter cursor mode - collapse all regions to cursor position."
+  "Enter cursor mode - collapse all regions to beginning of selection.
+Like vim-visual-multi: when direction is forward, cursor goes to beginning."
   (setf (evm-state-mode evm--state) 'cursor)
   (dolist (region (evm-state-regions evm--state))
-    (let ((cursor-pos (evm--region-cursor-pos region)))
+    ;; Collapse to beginning (like vim-visual-multi with dir=1)
+    ;; For backward selections (dir=-1), use end instead
+    (let ((cursor-pos (if (= (evm-region-dir region) 1)
+                          (marker-position (evm-region-beg region))
+                        (1- (marker-position (evm-region-end region))))))
       (set-marker (evm-region-beg region) cursor-pos)
       (set-marker (evm-region-end region) cursor-pos)
       (set-marker (evm-region-anchor region) cursor-pos)))
