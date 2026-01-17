@@ -2053,26 +2053,18 @@ In visual-char mode: creates a cursor at start and end of selection."
 ;;; Undo/Redo with cursor restoration (Phase 9.3)
 
 (defun evm-undo ()
-  "Undo last change and restore cursor positions from snapshot."
+  "Undo last change and resync cursor positions to pattern."
   (interactive)
   (when (evm-active-p)
-    (let ((snapshots (evm-state-undo-snapshots evm--state)))
-      (if (and snapshots (cdr snapshots))  ; Need at least 2 snapshots
-          (progn
-            ;; Pop current state
-            (pop (evm-state-undo-snapshots evm--state))
-            ;; Restore from previous snapshot
-            (let ((snapshot (car (evm-state-undo-snapshots evm--state))))
-              (when snapshot
-                (evm--restore-from-snapshot snapshot)
-                ;; Also do Emacs undo
-                (let ((evm--in-change t))  ; Prevent new snapshot
-                  (undo))
-                ;; Move to leader
-                (when-let ((leader (evm--leader-region)))
-                  (goto-char (evm--region-cursor-pos leader)))
-                (message "EVM undo"))))
-        (message "No more EVM undo history")))))
+    ;; Call evil-undo which handles undo-tree properly
+    (evil-undo 1)
+    ;; Resync regions to pattern matches
+    (when (car (evm-state-patterns evm--state))
+      (evm--resync-regions-to-pattern))
+    ;; Move to leader
+    (when-let ((leader (evm--leader-region)))
+      (goto-char (evm--region-cursor-pos leader)))
+    (evm--update-all-overlays)))
 
 (defun evm-redo ()
   "Redo (not yet implemented - use evil-redo or C-r)."
