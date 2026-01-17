@@ -329,14 +329,21 @@ Returns the created region."
     (evm--create-overlay-for-region region)))
 
 (defun evm--remove-all-overlays ()
-  "Remove all evm overlays from buffer."
+  "Remove all evm overlays from buffer.
+Clears tracked overlay references and also removes any orphan overlays
+by scanning for overlays with `evm-type' property."
+  ;; Clear tracked overlay references
   (dolist (region (evm-state-regions evm--state))
     (when (evm-region-overlay region)
       (delete-overlay (evm-region-overlay region))
       (setf (evm-region-overlay region) nil))
     (when (evm-region-cursor-overlay region)
       (delete-overlay (evm-region-cursor-overlay region))
-      (setf (evm-region-cursor-overlay region) nil))))
+      (setf (evm-region-cursor-overlay region) nil)))
+  ;; Also remove any orphan evm overlays (have evm-type property)
+  (dolist (ov (overlays-in (point-min) (point-max)))
+    (when (overlay-get ov 'evm-type)
+      (delete-overlay ov))))
 
 (defun evm--update-leader-overlays ()
   "Update overlays to reflect new leader."

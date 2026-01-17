@@ -84,6 +84,13 @@
 (define-key evm-cursor-map (kbd "r") #'evm-replace-char)
 (define-key evm-cursor-map (kbd "~") #'evm-toggle-case-char)
 (define-key evm-cursor-map (kbd "v") #'evm-enter-extend)
+;; Operators with motions
+(define-key evm-cursor-map (kbd "d") #'evm-operator-delete)
+(define-key evm-cursor-map (kbd "c") #'evm-operator-change)
+(define-key evm-cursor-map (kbd "y") #'evm-operator-yank)
+(define-key evm-cursor-map (kbd "D") #'evm-delete-to-eol)
+(define-key evm-cursor-map (kbd "C") #'evm-change-to-eol)
+(define-key evm-cursor-map (kbd "Y") #'evm-yank-line)
 (define-key evm-cursor-map (kbd "C-n") #'evm-add-next-match)
 (define-key evm-cursor-map (kbd "<C-down>") #'evm-add-cursor-down)
 (define-key evm-cursor-map (kbd "<C-up>") #'evm-add-cursor-up)
@@ -348,6 +355,9 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
   ;; Currently empty but kept for potential future use
   nil)
 
+(defvar-local evm--last-buffer-tick nil
+  "Last buffer modification tick, used to detect changes.")
+
 (defun evm--post-command ()
   "Called after each command."
   (when (evm-active-p)
@@ -355,6 +365,12 @@ BEG and END are the changed region, OLD-LEN is length of replaced text."
     (when (and (memq this-command '(undo evil-undo undo-tree-undo undo-fu-only-undo))
                (car (evm-state-patterns evm--state)))
       (evm--resync-regions-to-pattern))
+    ;; Ensure overlays are in sync with markers after buffer modifications
+    ;; (fixes visual glitches after undo where overlays drift from markers)
+    (let ((current-tick (buffer-modified-tick)))
+      (unless (eql current-tick evm--last-buffer-tick)
+        (setq evm--last-buffer-tick current-tick)
+        (evm--update-all-overlays)))
     ;; Keep real cursor at leader visual position
     ;; In extend mode, this is on the last selected char (end-1), not after
     (when-let ((leader (evm--leader-region)))
@@ -1218,6 +1234,333 @@ after FN completes (useful for commands like o/O that move point)."
   ;; Move to leader
   (when-let ((leader (evm--leader-region)))
     (goto-char (evm--region-cursor-pos leader))))
+
+;;; Operator infrastructure (d/c/y with motions)
+
+;; Single character motions
+(defconst evm--single-motions
+  '(?h ?j ?k ?l ?w ?e ?b ?W ?E ?B ?$ ?^ ?0 ?{ ?} ?\( ?\) ?% ?n ?N ?_ ?H ?M ?L ?G)
+  "Single character motions.")
+
+;; Double character motion prefixes
+(defconst evm--double-motion-prefixes
+  '(?i ?a ?f ?F ?t ?T ?g ?\[ ?\])
+  "Characters that start a two-character motion.")
+
+;; Text objects for i/a
+(defconst evm--text-objects
+  '(?w ?W ?s ?p ?b ?\( ?\) ?\[ ?\] ?{ ?} ?< ?> ?\" ?' ?` ?t)
+  "Valid text objects for i/a prefix.")
+
+;; g-motions
+(defconst evm--g-motions
+  '(?e ?E ?g ?_ ?j ?k ?0 ?^ ?$ ?m ?M)
+  "Valid motions after g prefix.")
+
+(defun evm--digit-p (char)
+  "Return t if CHAR is a digit 1-9 (not 0, which is a motion)."
+  (and char (>= char ?1) (<= char ?9)))
+
+(defun evm--parse-count ()
+  "Parse optional count from input.
+Returns (count . next-char) where count is nil or a number."
+  (let ((count nil)
+        (char (read-char "Operator: ")))
+    (when char
+      ;; Collect digits
+      (while (evm--digit-p char)
+        (setq count (+ (* (or count 0) 10) (- char ?0)))
+        (setq char (read-char)))
+      (cons count char))))
+
+(defun evm--parse-motion ()
+  "Parse a motion from user input.
+Returns a plist (:keys STRING :count NUMBER) or nil on cancel.
+:keys is the motion key sequence (e.g., \"w\", \"iw\", \"f(\")
+:count is the motion count (e.g., 3 for 3w)"
+  (let* ((count-and-char (evm--parse-count))
+         (count (car count-and-char))
+         (char (cdr count-and-char)))
+    (unless char
+      (cl-return-from evm--parse-motion nil))
+    (cond
+     ;; ESC cancels
+     ((= char 27)
+      nil)
+     ;; Single motions
+     ((memq char evm--single-motions)
+      (list :keys (string char) :count count))
+     ;; Double motion prefixes
+     ((memq char evm--double-motion-prefixes)
+      (let ((char2 (read-char)))
+        (cond
+         ((null char2) nil)
+         ((= char2 27) nil)  ; ESC cancels
+         ;; i/a + text object
+         ((and (memq char '(?i ?a))
+               (memq char2 evm--text-objects))
+          (list :keys (string char char2) :count count))
+         ;; f/F/t/T + any char
+         ((memq char '(?f ?F ?t ?T))
+          (list :keys (string char char2) :count count))
+         ;; g + motion
+         ((and (= char ?g)
+               (memq char2 evm--g-motions))
+          (list :keys (string char char2) :count count))
+         ;; [/] + motion (for navigation)
+         ((memq char '(?\[ ?\]))
+          (list :keys (string char char2) :count count))
+         (t nil))))
+     ;; Numbers after operator (d3w pattern)
+     ((and (null count) (>= char ?1) (<= char ?9))
+      ;; Re-parse with this char as start of count
+      (let ((new-count (- char ?0))
+            (next-char (read-char)))
+        (while (and next-char (>= next-char ?0) (<= next-char ?9))
+          (setq new-count (+ (* new-count 10) (- next-char ?0)))
+          (setq next-char (read-char)))
+        (when next-char
+          ;; Now parse the actual motion
+          (cond
+           ((= next-char 27) nil)
+           ((memq next-char evm--single-motions)
+            (list :keys (string next-char) :count new-count))
+           ((memq next-char evm--double-motion-prefixes)
+            (let ((char2 (read-char)))
+              (when (and char2 (/= char2 27))
+                (list :keys (string next-char char2) :count new-count))))
+           (t nil)))))
+     (t nil))))
+
+;; Inclusive motions need +1 to end position for operators
+(defconst evm--inclusive-motions
+  '(?$ ?e ?E ?% ?G ?N ?n ?} ?{ ?\) ?\( ?` ?' ?g ?f ?F ?t ?T ?\] ?\[)
+  "Motions that are inclusive (include the character at end position).")
+
+(defun evm--get-motion-range (motion-keys count)
+  "Get the range for MOTION-KEYS with COUNT from current position.
+Returns (BEG END) or nil if motion failed."
+  (let* ((count (or count 1))
+         (beg (point))
+         end
+         ;; Temporarily disable evm keymaps
+         (saved-alist evm--emulation-alist)
+         ;; Check if motion is inclusive
+         (first-char (aref motion-keys 0))
+         (inclusive-p (memq first-char evm--inclusive-motions)))
+    (setq evm--emulation-alist nil)
+    ;; Remove post-command-hook temporarily to prevent cursor jumping during macro
+    (remove-hook 'post-command-hook #'evm--post-command t)
+    (unwind-protect
+        (cond
+         ;; Text objects: iw, aw, is, as, ip, ap, i", a", etc.
+         ((and (= (length motion-keys) 2)
+               (memq first-char '(?i ?a)))
+          (let* ((inner-p (= first-char ?i))
+                 (obj-char (aref motion-keys 1))
+                 (bounds (pcase obj-char
+                           (?w (if inner-p (evil-inner-word) (evil-a-word)))
+                           (?W (if inner-p (evil-inner-WORD) (evil-a-WORD)))
+                           (?s (if inner-p (evil-inner-sentence) (evil-a-sentence)))
+                           (?p (if inner-p (evil-inner-paragraph) (evil-a-paragraph)))
+                           ((or ?\( ?\) ?b) (if inner-p (evil-inner-paren) (evil-a-paren)))
+                           ((or ?\[ ?\]) (if inner-p (evil-inner-bracket) (evil-a-bracket)))
+                           ((or ?{ ?} ?B) (if inner-p (evil-inner-curly) (evil-a-curly)))
+                           ((or ?< ?>) (if inner-p (evil-inner-angle) (evil-a-angle)))
+                           (?\" (if inner-p (evil-inner-double-quote) (evil-a-double-quote)))
+                           (?\' (if inner-p (evil-inner-single-quote) (evil-a-single-quote)))
+                           (?\` (if inner-p (evil-inner-back-quote) (evil-a-back-quote)))
+                           (?t (if inner-p (evil-inner-tag) (evil-a-tag)))
+                           (_ nil))))
+            (when bounds
+              (setq beg (nth 0 bounds)
+                    end (nth 1 bounds)))))
+         ;; Regular motions
+         (t
+          (let ((keys (concat (when (> count 1) (number-to-string count))
+                              motion-keys)))
+            (save-excursion
+              (condition-case nil
+                  (execute-kbd-macro keys)
+                (error nil))
+              (setq end (point))
+              ;; For inclusive motions, include the character at end
+              (when (and inclusive-p (not (eobp)))
+                (setq end (1+ end)))))))
+      ;; Restore evm keymaps and hook
+      (setq evm--emulation-alist saved-alist)
+      (add-hook 'post-command-hook #'evm--post-command nil t))
+    ;; Ensure beg <= end
+    (when (and beg end)
+      (when (> beg end)
+        (let ((tmp beg))
+          (setq beg end
+                end tmp)))
+      (when (> end beg)
+        (list beg end)))))
+
+(defun evm--execute-operator-motion (operator motion-keys count)
+  "Execute OPERATOR with MOTION-KEYS at current position.
+OPERATOR is one of \\='delete, \\='change, \\='yank.
+MOTION-KEYS is a string like \"w\", \"iw\", \"f(\".
+COUNT is the motion count or nil.
+Returns the deleted/yanked text, or nil."
+  (let* ((range (evm--get-motion-range motion-keys count))
+         (beg (car range))
+         (end (cadr range))
+         text)
+    (when (and beg end (> end beg))
+      (setq text (buffer-substring-no-properties beg end))
+      ;; Perform the operation
+      (pcase operator
+        ('delete
+         (delete-region beg end))
+        ('change
+         (delete-region beg end))
+        ('yank
+         ;; Just copy, don't delete
+         nil)))
+    text))
+
+(defun evm--run-operator-with-motion (operator &optional prefix-count)
+  "Run OPERATOR with a motion parsed from user input.
+OPERATOR is one of \\='delete, \\='change, \\='yank.
+PREFIX-COUNT is an optional count from prefix argument (for 2dw pattern).
+Applies the operator to all cursors."
+  (let ((motion (evm--parse-motion)))
+    (unless motion
+      (message "Cancelled")
+      (cl-return-from evm--run-operator-with-motion nil))
+    (let ((keys (plist-get motion :keys))
+          ;; Combine prefix count with motion count: 2d3w = delete 6 words
+          (count (let ((motion-count (plist-get motion :count))
+                       (pre (and prefix-count (prefix-numeric-value prefix-count))))
+                   (cond
+                    ((and pre motion-count) (* pre motion-count))
+                    (pre pre)
+                    (motion-count motion-count)
+                    (t nil))))
+          (texts '())
+          ;; Create undo boundary so all changes are undone together
+          (undo-handle (prepare-change-group)))
+      (evm--push-undo-snapshot)
+      (unwind-protect
+          (progn
+            ;; Execute at all cursors (from end to beginning)
+            (let ((regions (reverse (evm-state-regions evm--state)))
+                  (inhibit-modification-hooks t))
+              (remove-hook 'post-command-hook #'evm--post-command t)
+              (unwind-protect
+                  (dolist (region regions)
+                    (goto-char (evm--region-cursor-pos region))
+                    (let ((text (evm--execute-operator-motion operator keys count)))
+                      (when text
+                        (push text texts))
+                      ;; Update cursor position
+                      (evm--region-set-cursor-pos region (point))))
+                (add-hook 'post-command-hook #'evm--post-command nil t)))
+            ;; Save yanked/deleted text to VM register
+            (when texts
+              (puthash ?\" (nreverse texts) (evm-state-registers evm--state))
+              ;; Also to kill-ring
+              (kill-new (car texts)))
+            ;; Clamp and update
+            (evm--clamp-markers)
+            (evm--check-and-merge-overlapping)
+            (evm--update-all-overlays)
+            ;; Move to leader
+            (when-let ((leader (evm--leader-region)))
+              (goto-char (evm--region-cursor-pos leader))))
+        ;; Amalgamate all changes into single undo entry
+        (undo-amalgamate-change-group undo-handle))
+      ;; Return for change operator to know if we should enter insert mode
+      (list :texts texts :motion motion))))
+
+(defun evm-operator-delete (count)
+  "Delete operator: wait for motion, then delete at all cursors.
+COUNT is optional prefix argument for patterns like 2dw.
+Examples: dw (delete word), d3w (delete 3 words), 2dw (delete 2 words)."
+  (interactive "P")
+  (when (evm-cursor-mode-p)
+    (message "[EVM] d")
+    (evm--run-operator-with-motion 'delete count)))
+
+(defun evm-operator-change (count)
+  "Change operator: delete with motion, then enter insert mode.
+COUNT is optional prefix argument for patterns like 2cw.
+Examples: cw (change word), ciw (change inner word), 2cw (change 2 words)."
+  (interactive "P")
+  (when (evm-cursor-mode-p)
+    (message "[EVM] c")
+    (let ((result (evm--run-operator-with-motion 'change count)))
+      (when (and result (plist-get result :texts))
+        ;; Enter insert mode
+        (evm--start-insert-mode)
+        (evil-insert-state)))))
+
+(defun evm-operator-yank (count)
+  "Yank operator: copy text defined by motion at all cursors.
+COUNT is optional prefix argument for patterns like 2yw.
+Examples: yw (yank word), yiw (yank inner word), 2yw (yank 2 words)."
+  (interactive "P")
+  (when (evm-cursor-mode-p)
+    (message "[EVM] y")
+    (let ((result (evm--run-operator-with-motion 'yank count)))
+      (when result
+        (message "Yanked %d regions" (length (plist-get result :texts)))))))
+
+;; Shortcuts for common operations
+(defun evm-delete-to-eol ()
+  "Delete from cursor to end of line (D)."
+  (interactive)
+  (when (evm-cursor-mode-p)
+    (let ((texts '())
+          (undo-handle (prepare-change-group)))
+      (evm--push-undo-snapshot)
+      (unwind-protect
+          (progn
+            (let ((regions (reverse (evm-state-regions evm--state)))
+                  (inhibit-modification-hooks t))
+              (dolist (region regions)
+                (goto-char (evm--region-cursor-pos region))
+                (let ((beg (point))
+                      (end (line-end-position)))
+                  (when (> end beg)
+                    (push (buffer-substring-no-properties beg end) texts)
+                    (delete-region beg end))
+                  (evm--region-set-cursor-pos region (point)))))
+            (when texts
+              (puthash ?\" (nreverse texts) (evm-state-registers evm--state))
+              (kill-new (car texts))))
+        (undo-amalgamate-change-group undo-handle)))
+    (evm--clamp-markers)
+    (evm--update-all-overlays)
+    (when-let ((leader (evm--leader-region)))
+      (goto-char (evm--region-cursor-pos leader)))))
+
+(defun evm-change-to-eol ()
+  "Change from cursor to end of line (C)."
+  (interactive)
+  (when (evm-cursor-mode-p)
+    (evm-delete-to-eol)
+    (evm--start-insert-mode)
+    (evil-insert-state)))
+
+(defun evm-yank-line ()
+  "Yank entire line (Y)."
+  (interactive)
+  (when (evm-cursor-mode-p)
+    (let ((texts '()))
+      (dolist (region (evm-state-regions evm--state))
+        (save-excursion
+          (goto-char (evm--region-cursor-pos region))
+          (let ((beg (line-beginning-position))
+                (end (line-end-position)))
+            (push (buffer-substring-no-properties beg end) texts))))
+      (when texts
+        (puthash ?\" (nreverse texts) (evm-state-registers evm--state))
+        (kill-new (car texts))
+        (message "Yanked %d lines" (length texts))))))
 
 ;;; Global keybindings for activation
 

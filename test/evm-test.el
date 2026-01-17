@@ -1028,5 +1028,114 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
       (evm-run-normal "l")
       (should (= (evm-region-count) count-before)))))
 
+;;; Operator tests
+
+(ert-deftest evm-test-operator-bindings-in-cursor-mode ()
+  "d, c, y should be bound to operators in cursor mode."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-add-cursor-down)  ; Enters cursor mode
+    (should (evm-cursor-mode-p))
+    (should (eq (key-binding "d") 'evm-operator-delete))
+    (should (eq (key-binding "c") 'evm-operator-change))
+    (should (eq (key-binding "y") 'evm-operator-yank))
+    (should (eq (key-binding "D") 'evm-delete-to-eol))
+    (should (eq (key-binding "C") 'evm-change-to-eol))
+    (should (eq (key-binding "Y") 'evm-yank-line))))
+
+(ert-deftest evm-test-delete-to-eol ()
+  "D should delete from cursor to end of line at all cursors."
+  (evm-test-with-buffer "foo bar\nbaz qux\nend"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    ;; Move cursors to position 4 on each line (after "foo ", "baz ", "end")
+    ;; Actually at beginning, so D deletes whole line content
+    (evm-delete-to-eol)
+    (should (string= (buffer-string) "\n\n"))))
+
+(ert-deftest evm-test-delete-to-eol-mid-line ()
+  "D from middle of line should delete only rest of line."
+  (evm-test-with-buffer "foo bar\nbaz qux"
+    (evm-activate)
+    (evm--create-region 4 4)   ; after "foo" on line 1
+    (evm--create-region 12 12) ; after "baz" on line 2
+    (evm-delete-to-eol)
+    (should (string= (buffer-string) "foo\nbaz"))))
+
+(ert-deftest evm-test-yank-line ()
+  "Y should yank entire line at all cursors."
+  (evm-test-with-buffer "foo bar\nbaz qux"
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 2))
+    (evm-yank-line)
+    (let ((contents (gethash ?" (evm-state-registers evm--state))))
+      (should contents)
+      (should (= (length contents) 2))
+      (should (string= (car contents) "foo bar"))
+      (should (string= (cadr contents) "baz qux")))))
+
+;; Note: evm--execute-operator-motion tests require interactive Emacs
+;; (execute-kbd-macro doesn't work well in batch/server mode)
+;; These are tested via make test-interactive instead
+
+(ert-deftest evm-test-single-motions-list ()
+  "Single motions list should contain expected motions."
+  (should (memq ?h evm--single-motions))
+  (should (memq ?j evm--single-motions))
+  (should (memq ?k evm--single-motions))
+  (should (memq ?l evm--single-motions))
+  (should (memq ?w evm--single-motions))
+  (should (memq ?e evm--single-motions))
+  (should (memq ?b evm--single-motions))
+  (should (memq ?$ evm--single-motions))
+  (should (memq ?^ evm--single-motions))
+  (should (memq ?0 evm--single-motions)))
+
+(ert-deftest evm-test-double-motion-prefixes-list ()
+  "Double motion prefixes should contain expected prefixes."
+  (should (memq ?i evm--double-motion-prefixes))
+  (should (memq ?a evm--double-motion-prefixes))
+  (should (memq ?f evm--double-motion-prefixes))
+  (should (memq ?F evm--double-motion-prefixes))
+  (should (memq ?t evm--double-motion-prefixes))
+  (should (memq ?T evm--double-motion-prefixes))
+  (should (memq ?g evm--double-motion-prefixes)))
+
+(ert-deftest evm-test-text-objects-list ()
+  "Text objects list should contain expected objects."
+  (should (memq ?w evm--text-objects))
+  (should (memq ?W evm--text-objects))
+  (should (memq ?s evm--text-objects))
+  (should (memq ?p evm--text-objects))
+  (should (memq ?\" evm--text-objects))
+  (should (memq ?' evm--text-objects))
+  (should (memq ?\( evm--text-objects))
+  (should (memq ?\) evm--text-objects))
+  (should (memq ?\[ evm--text-objects))
+  (should (memq ?\] evm--text-objects))
+  (should (memq ?{ evm--text-objects))
+  (should (memq ?} evm--text-objects)))
+
+(ert-deftest evm-test-digit-p ()
+  "evm--digit-p should recognize digits 1-9."
+  (should (evm--digit-p ?1))
+  (should (evm--digit-p ?5))
+  (should (evm--digit-p ?9))
+  (should-not (evm--digit-p ?0))  ; 0 is a motion, not a count digit
+  (should-not (evm--digit-p ?a))
+  (should-not (evm--digit-p nil)))
+
+;; evm-test-delete-saves-to-register requires interactive Emacs
+
+(ert-deftest evm-test-operator-accepts-prefix-arg ()
+  "Operator commands should accept prefix argument for 2dw pattern."
+  (should (commandp 'evm-operator-delete))
+  (should (commandp 'evm-operator-change))
+  (should (commandp 'evm-operator-yank))
+  ;; Check interactive spec accepts prefix arg
+  (should (string-match-p "P" (or (car (cdr (interactive-form 'evm-operator-delete))) "")))
+  (should (string-match-p "P" (or (car (cdr (interactive-form 'evm-operator-change))) "")))
+  (should (string-match-p "P" (or (car (cdr (interactive-form 'evm-operator-yank))) ""))))
+
 (provide 'evm-test)
 ;;; evm-test.el ends here
