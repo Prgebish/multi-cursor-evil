@@ -68,6 +68,9 @@
 (define-key evm-mode-map (kbd "\\ a") #'evm-align)
 (define-key evm-mode-map (kbd "\\ g S") #'evm-reselect-last)
 (define-key evm-mode-map (kbd "\\ r") #'evm-toggle-restrict)
+(define-key evm-mode-map (kbd "\\ z") #'evm-run-normal)
+(define-key evm-mode-map (kbd "\\ @") #'evm-run-macro)
+(define-key evm-mode-map (kbd "\\ :") #'evm-run-ex)
 
 ;; Cursor mode specific
 (define-key evm-cursor-map (kbd "i") #'evm-insert)
@@ -506,14 +509,22 @@ matches when text hasn't been fully restored by undo."
         (evm-exit)))))
 
 (defun evm-remove-current ()
-  "Remove current cursor."
+  "Remove current cursor and select the previous one.
+If on the first cursor, select the new first cursor (was second)."
   (interactive)
   (when (evm-active-p)
-    (let ((leader (evm--leader-region)))
+    (let ((leader (evm--leader-region))
+          (old-idx (evm--leader-index)))
       (if (= (evm-region-count) 1)
           (evm-exit)
-        (evm-goto-next)
-        (evm--delete-region leader)))))
+        ;; Delete first, then select by index
+        (evm--delete-region leader)
+        ;; Select previous, or 0 if we were first
+        (let* ((new-idx (max 0 (1- old-idx)))
+               (regions (evm-state-regions evm--state))
+               (new-region (nth new-idx regions)))
+          (evm--set-leader new-region)
+          (goto-char (evm--region-cursor-pos new-region)))))))
 
 ;;; Cursor creation
 
@@ -1057,6 +1068,86 @@ Spaces are inserted before the start of each region."
       (evm-activate))
     (dolist (pos-pair last)
       (evm--create-region (car pos-pair) (car pos-pair)))))
+
+;;; Run at Cursors commands
+
+(defun evm-run-normal (cmd)
+  "Run normal mode CMD at all cursor positions.
+If CMD is nil, prompt for input."
+  (interactive
+   (list (read-string "Normal command: ")))
+  (when (and (evm-active-p) (not (string-empty-p cmd)))
+    (evm--push-undo-snapshot)
+    ;; Temporarily disable evm keymaps to use original evil bindings
+    (let ((saved-alist evm--emulation-alist))
+      (setq evm--emulation-alist nil)
+      (unwind-protect
+          (evm--run-command-at-cursors
+           (lambda ()
+             (execute-kbd-macro cmd)))
+        ;; Restore evm keymaps
+        (setq evm--emulation-alist saved-alist)))))
+
+(defun evm-run-macro (register)
+  "Run macro from REGISTER at all cursor positions."
+  (interactive
+   (list (read-char "Register: ")))
+  (when (evm-active-p)
+    (let ((macro (evil-get-register register t)))
+      (unless macro
+        (user-error "Register '%c' is empty" register))
+      (evm--push-undo-snapshot)
+      ;; Temporarily disable evm keymaps to use original evil bindings
+      (let ((saved-alist evm--emulation-alist))
+        (setq evm--emulation-alist nil)
+        (unwind-protect
+            (evm--run-command-at-cursors
+             (lambda ()
+               (execute-kbd-macro macro)))
+          ;; Restore evm keymaps
+          (setq evm--emulation-alist saved-alist))))))
+
+(defun evm-run-ex (cmd)
+  "Run Ex command CMD at all cursor positions.
+If CMD is nil, prompt for input."
+  (interactive
+   (list (read-string ": " nil 'evil-ex-history)))
+  (when (and (evm-active-p) (not (string-empty-p cmd)))
+    (evm--push-undo-snapshot)
+    (evm--run-command-at-cursors
+     (lambda ()
+       (evil-ex-execute cmd)))))
+
+(defun evm--run-command-at-cursors (fn &optional update-positions)
+  "Execute FN at all cursor positions in buffer order.
+Processes from end to beginning to preserve positions.
+If UPDATE-POSITIONS is non-nil, update cursor positions to point after FN.
+Updates overlays after execution."
+  (let* ((regions (reverse (evm-state-regions evm--state)))
+         (inhibit-modification-hooks t))
+    ;; Temporarily disable post-command-hook to prevent cursor jumping to leader
+    (remove-hook 'post-command-hook #'evm--post-command t)
+    (unwind-protect
+        (dolist (region regions)
+          (goto-char (evm--region-cursor-pos region))
+          (condition-case err
+              (progn
+                (funcall fn)
+                ;; Only update position if explicitly requested (for movement commands)
+                (when update-positions
+                  (evm--region-set-cursor-pos region (point))))
+            (error
+             (message "Error at cursor %d: %s"
+                      (evm-region-index region) (error-message-string err)))))
+      ;; Re-enable post-command-hook
+      (add-hook 'post-command-hook #'evm--post-command nil t)))
+  ;; Clamp and update after all changes
+  (evm--clamp-markers)
+  (evm--check-and-merge-overlapping)
+  (evm--update-all-overlays)
+  ;; Move to leader
+  (when-let ((leader (evm--leader-region)))
+    (goto-char (evm--region-cursor-pos leader))))
 
 (defun evm-toggle-restrict ()
   "Toggle restriction for evm search.

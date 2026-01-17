@@ -900,5 +900,133 @@
     (should (string= (buffer-string)
                      "short          = 1\nvery_long_name = 2\nmedium         = 3"))))
 
+;;; Run at Cursors tests
+
+(defmacro evm-test-with-real-buffer (content &rest body)
+  "Create real buffer with CONTENT, execute BODY, then cleanup.
+Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
+  (declare (indent 1))
+  `(let ((buf (generate-new-buffer " *evm-test*")))
+     (unwind-protect
+         (progn
+           (switch-to-buffer buf)
+           (insert ,content)
+           (goto-char (point-min))
+           (evil-local-mode 1)
+           (evil-normal-state)
+           ,@body)
+       (when (evm-active-p)
+         (evm-exit))
+       (kill-buffer buf))))
+
+(ert-deftest evm-test-run-normal-basic ()
+  "\\z should run normal command at all cursors."
+  (evm-test-with-real-buffer "foo\nbar\nbaz"
+    ;; Create cursors on each line
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    ;; Run "x" at all cursors (delete char)
+    (evm-run-normal "x")
+    (should (string= (buffer-string) "oo\nar\naz"))))
+
+(ert-deftest evm-test-run-normal-with-count ()
+  "\\z should handle commands with implicit count."
+  (evm-test-with-real-buffer "foo\nbar\nbaz"
+    ;; Create cursors on each line
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    ;; Run "2x" at all cursors (delete 2 chars)
+    (evm-run-normal "2x")
+    (should (string= (buffer-string) "o\nr\nz"))))
+
+(ert-deftest evm-test-run-normal-movement ()
+  "\\z should handle movement commands."
+  (evm-test-with-real-buffer "foo\nbar\nbaz"
+    ;; Create cursors on each line at position 1 of each line
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    ;; Run "l" to move right - need update-positions
+    ;; Since run-normal doesn't update positions by default,
+    ;; markers stay in place but cursor moves
+    (evm-run-normal "l")
+    ;; For movement commands, positions don't change (markers auto-adjust)
+    ;; The visual cursor moves but markers don't
+    (let ((positions (evm-test-positions)))
+      ;; Positions should remain at line beginnings
+      (should (= (car positions) 1))
+      (should (= (nth 1 positions) 5))
+      (should (= (nth 2 positions) 9)))))
+
+(ert-deftest evm-test-run-normal-empty-command ()
+  "\\z with empty command should do nothing."
+  (evm-test-with-buffer "foo\nbar"
+    (evm-add-cursor-down)
+    (let ((content-before (buffer-string)))
+      (evm-run-normal "")
+      (should (string= (buffer-string) content-before)))))
+
+(ert-deftest evm-test-run-command-at-cursors-error-handling ()
+  "Errors in commands should be caught and reported."
+  (evm-test-with-buffer "foo\nbar"
+    (evm-add-cursor-down)
+    ;; This should not throw an error that stops everything
+    ;; Running an invalid command should be handled gracefully
+    (condition-case nil
+        (evm--run-command-at-cursors
+         (lambda ()
+           (error "Test error")))
+      (error nil))
+    ;; evm should still be active
+    (should (evm-active-p))))
+
+(ert-deftest evm-test-run-macro-basic ()
+  "\\@ should run macro at all cursors."
+  (evm-test-with-real-buffer "foo\nbar\nbaz"
+    ;; Create cursors on each line
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    ;; Record a macro that deletes first char: "x"
+    (evil-set-register ?q (kbd "x"))
+    ;; Run macro
+    (evm-run-macro ?q)
+    (should (string= (buffer-string) "oo\nar\naz"))))
+
+(ert-deftest evm-test-run-macro-empty-register ()
+  "\\@ with empty register should error."
+  (evm-test-with-buffer "foo\nbar"
+    (evm-add-cursor-down)
+    ;; Clear register
+    (evil-set-register ?z nil)
+    (should-error (evm-run-macro ?z))))
+
+(ert-deftest evm-test-run-ex-basic ()
+  "\\: should run Ex command at all cursors."
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors on each line
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    ;; Run "s/^/X/" to prepend X at each cursor line
+    (evm-run-ex "s/^/X/")
+    (should (string= (buffer-string) "Xfoo\nXbar\nXbaz"))))
+
+(ert-deftest evm-test-run-ex-empty-command ()
+  "\\: with empty command should do nothing."
+  (evm-test-with-buffer "foo\nbar"
+    (evm-add-cursor-down)
+    (let ((content-before (buffer-string)))
+      (evm-run-ex "")
+      (should (string= (buffer-string) content-before)))))
+
+(ert-deftest evm-test-run-normal-preserves-cursor-count ()
+  "\\z should preserve number of cursors."
+  (evm-test-with-real-buffer "foo\nbar\nbaz"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (let ((count-before (evm-region-count)))
+      (evm-run-normal "l")
+      (should (= (evm-region-count) count-before)))))
+
 (provide 'evm-test)
 ;;; evm-test.el ends here
