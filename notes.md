@@ -192,6 +192,33 @@ R.vcol    ; вертикальная колонка для j/k
 
 ---
 
+## Performance Optimizations (Phase 11.3)
+
+### 2026-01-19: Overlay Updates Optimization
+**Проблема:** `evm--update-all-overlays` вызывалась после каждого движения и пересоздавала все overlays.
+**Решение:** Новая версия переиспользует существующие overlays через `move-overlay`, создаёт новые только когда нужно.
+**Результат:** O(n) move vs O(n) delete + O(n) create.
+
+### 2026-01-19: Buffer Scan Optimization
+**Проблема:** `evm--remove-all-overlays` сканировала весь буфер `(overlays-in (point-min) (point-max))`.
+**Решение:** Разделили на две функции:
+- `evm--remove-all-overlays` — быстрая, работает только с tracked overlays
+- `evm--remove-all-overlays-thorough` — полная очистка при exit
+
+### 2026-01-19: Region Sorting Optimization
+**Проблема:** При каждом `evm--create-region` вызывался полный sort O(n log n).
+**Решение:** Добавили `evm--insert-region-sorted` — вставка в отсортированный список O(n).
+
+### 2026-01-19: Batch Region Creation
+**Проблема:** `evm-select-all` вызывала `evm--create-region` в цикле — каждый раз sort + overlay.
+**Решение:** Добавили `evm--create-regions-batch` — собирает все позиции, сортирует один раз, создаёт overlays batch.
+
+### 2026-01-19: O(1) Duplicate Check in Select All
+**Проблема:** `evm-select-all` использовала `cl-find-if` O(n) для проверки дубликатов.
+**Решение:** Используем hash-table для O(1) lookup.
+
+---
+
 ## Sources
 
 - [gabesoft/evil-mc](https://github.com/gabesoft/evil-mc)

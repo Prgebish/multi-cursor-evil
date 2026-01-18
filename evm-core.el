@@ -174,10 +174,8 @@ Returns the created region."
                   :vcol nil
                   :txt (buffer-substring-no-properties beg end)
                   :pattern pattern)))
-    ;; Add to regions list
-    (push region (evm-state-regions evm--state))
-    ;; Sort by position
-    (evm--sort-regions)
+    ;; Insert into sorted list (more efficient than push + sort)
+    (evm--insert-region-sorted region)
     ;; Update indices
     (evm--update-region-indices)
     ;; Set as leader if first region
@@ -216,6 +214,64 @@ Returns the created region."
         (cl-sort (evm-state-regions evm--state)
                  #'<
                  :key (lambda (r) (marker-position (evm-region-beg r))))))
+
+(defun evm--insert-region-sorted (region)
+  "Insert REGION into the sorted regions list in correct position.
+This is O(n) but avoids the O(n log n) cost of full sort."
+  (let* ((regions (evm-state-regions evm--state))
+         (pos (marker-position (evm-region-beg region))))
+    (if (null regions)
+        (setf (evm-state-regions evm--state) (list region))
+      ;; Find insertion point
+      (let ((prev nil)
+            (curr regions))
+        (while (and curr
+                    (< (marker-position (evm-region-beg (car curr))) pos))
+          (setq prev curr
+                curr (cdr curr)))
+        (if prev
+            ;; Insert after prev
+            (setcdr prev (cons region curr))
+          ;; Insert at beginning
+          (setf (evm-state-regions evm--state) (cons region regions)))))))
+
+(defun evm--create-regions-batch (positions-list &optional pattern)
+  "Create multiple regions at once from POSITIONS-LIST.
+POSITIONS-LIST is a list of (BEG . END) cons cells.
+PATTERN is the optional search pattern for all regions.
+This is more efficient than calling evm--create-region in a loop
+because it sorts once and creates overlays in batch."
+  (let ((new-regions '()))
+    ;; Create all regions without sorting or overlays
+    (dolist (pos positions-list)
+      (let* ((beg (car pos))
+             (end (cdr pos))
+             (id (evm--generate-id))
+             (region (make-evm-region
+                      :id id
+                      :beg (evm--make-marker beg)
+                      :end (evm--make-marker end)
+                      :anchor (evm--make-marker beg)
+                      :dir 1
+                      :vcol nil
+                      :txt (buffer-substring-no-properties beg end)
+                      :pattern pattern)))
+        (push region new-regions)))
+    ;; Add all new regions to list
+    (setf (evm-state-regions evm--state)
+          (nconc (evm-state-regions evm--state) (nreverse new-regions)))
+    ;; Sort once
+    (evm--sort-regions)
+    ;; Update all indices
+    (evm--update-region-indices)
+    ;; Set leader if not set
+    (unless (evm-state-leader-id evm--state)
+      (when-let ((first (car (evm-state-regions evm--state))))
+        (setf (evm-state-leader-id evm--state) (evm-region-id first))))
+    ;; Create all overlays
+    (dolist (region new-regions)
+      (evm--create-overlay-for-region region))
+    new-regions))
 
 (defun evm--update-region-indices ()
   "Update index field for all regions."
@@ -329,24 +385,109 @@ Returns the created region."
     (setf (evm-region-cursor-overlay region) ov)))
 
 (defun evm--update-all-overlays ()
-  "Update all overlays based on current state."
+  "Update all overlays based on current state.
+Attempts to reuse existing overlays when possible for better performance."
+  (let ((extend-mode-p (evm-extend-mode-p)))
+    (dolist (region (evm-state-regions evm--state))
+      (let* ((is-leader (evm--leader-p region))
+             (cursor-ov (evm-region-cursor-overlay region))
+             (region-ov (evm-region-overlay region)))
+        (if extend-mode-p
+            ;; Extend mode: need both region and cursor overlays
+            (let ((beg (marker-position (evm-region-beg region)))
+                  (end (marker-position (evm-region-end region))))
+              ;; Update or create region overlay
+              (if (and region-ov (overlay-buffer region-ov))
+                  (progn
+                    (move-overlay region-ov beg end)
+                    (overlay-put region-ov 'face
+                                 (if is-leader 'evm-leader-region-face 'evm-region-face)))
+                ;; Need to create region overlay
+                (when region-ov (delete-overlay region-ov))
+                (let ((ov (make-overlay beg end nil t nil)))
+                  (overlay-put ov 'evm-type 'region)
+                  (overlay-put ov 'evm-id (evm-region-id region))
+                  (overlay-put ov 'priority 90)
+                  (overlay-put ov 'face (if is-leader 'evm-leader-region-face 'evm-region-face))
+                  (setf (evm-region-overlay region) ov)))
+              ;; Update or create cursor-in-region overlay
+              (let* ((cursor-pos (if (= (evm-region-dir region) 1)
+                                     (1- end)
+                                   beg))
+                     (cursor-pos (max (point-min) cursor-pos))
+                     (end-pos (min (1+ cursor-pos) (point-max))))
+                (if (and cursor-ov (overlay-buffer cursor-ov))
+                    (progn
+                      (move-overlay cursor-ov cursor-pos end-pos)
+                      (overlay-put cursor-ov 'face
+                                   (if is-leader 'evm-leader-cursor-face 'evm-cursor-face)))
+                  (when cursor-ov (delete-overlay cursor-ov))
+                  (let ((ov (make-overlay cursor-pos end-pos nil t nil)))
+                    (overlay-put ov 'evm-type 'cursor)
+                    (overlay-put ov 'evm-id (evm-region-id region))
+                    (overlay-put ov 'priority 110)
+                    (overlay-put ov 'face (if is-leader 'evm-leader-cursor-face 'evm-cursor-face))
+                    (setf (evm-region-cursor-overlay region) ov)))))
+          ;; Cursor mode: only need cursor overlay
+          ;; Delete region overlay if it exists
+          (when (and region-ov (overlay-buffer region-ov))
+            (delete-overlay region-ov)
+            (setf (evm-region-overlay region) nil))
+          ;; Update or create cursor overlay
+          (unless (and (boundp 'evm--insert-active)
+                       evm--insert-active
+                       is-leader)
+            (let* ((pos (marker-position (evm-region-beg region)))
+                   (at-eol (save-excursion
+                             (goto-char pos)
+                             (or (= pos (line-end-position))
+                                 (= pos (point-max)))))
+                   (end-pos (if at-eol pos (min (1+ pos) (point-max)))))
+              (if (and cursor-ov (overlay-buffer cursor-ov))
+                  (progn
+                    (move-overlay cursor-ov pos end-pos)
+                    (overlay-put cursor-ov 'face
+                                 (if is-leader 'evm-leader-cursor-face 'evm-cursor-face))
+                    ;; Update after-string for EOL
+                    (if at-eol
+                        (overlay-put cursor-ov 'after-string
+                                     (propertize " " 'face (overlay-get cursor-ov 'face) 'cursor t))
+                      (overlay-put cursor-ov 'after-string nil)))
+                (when cursor-ov (delete-overlay cursor-ov))
+                (let ((ov (make-overlay pos end-pos nil t nil)))
+                  (overlay-put ov 'evm-type 'cursor)
+                  (overlay-put ov 'evm-id (evm-region-id region))
+                  (overlay-put ov 'priority 100)
+                  (overlay-put ov 'face (if is-leader 'evm-leader-cursor-face 'evm-cursor-face))
+                  (when at-eol
+                    (overlay-put ov 'after-string
+                                 (propertize " " 'face (overlay-get ov 'face) 'cursor t)))
+                  (setf (evm-region-cursor-overlay region) ov))))))))))
+
+(defun evm--update-all-overlays-full ()
+  "Update all overlays by full recreation.
+Use this when mode changes or overlays are corrupted."
   (evm--remove-all-overlays)
   (dolist (region (evm-state-regions evm--state))
     (evm--create-overlay-for-region region)))
 
 (defun evm--remove-all-overlays ()
   "Remove all evm overlays from buffer.
-Clears tracked overlay references and also removes any orphan overlays
-by scanning for overlays with `evm-type' property."
+Clears tracked overlay references from regions."
   ;; Clear tracked overlay references
   (dolist (region (evm-state-regions evm--state))
-    (when (evm-region-overlay region)
-      (delete-overlay (evm-region-overlay region))
+    (when-let ((ov (evm-region-overlay region)))
+      (delete-overlay ov)
       (setf (evm-region-overlay region) nil))
-    (when (evm-region-cursor-overlay region)
-      (delete-overlay (evm-region-cursor-overlay region))
-      (setf (evm-region-cursor-overlay region) nil)))
-  ;; Also remove any orphan evm overlays (have evm-type property)
+    (when-let ((ov (evm-region-cursor-overlay region)))
+      (delete-overlay ov)
+      (setf (evm-region-cursor-overlay region) nil))))
+
+(defun evm--remove-all-overlays-thorough ()
+  "Remove all evm overlays including orphans.
+Use this during cleanup when overlays might be inconsistent."
+  (evm--remove-all-overlays)
+  ;; Also scan for any orphan evm overlays (have evm-type property)
   (dolist (ov (overlays-in (point-min) (point-max)))
     (when (overlay-get ov 'evm-type)
       (delete-overlay ov))))

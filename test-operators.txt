@@ -25,9 +25,17 @@ Test visual-block (\ c):
 
 9.2 Multiline Mode (M)
 ----------------------
-word word word
-  - C-n on "word", M -> toggles multiline search
-  - Mode line shows status
+Переключает флаг multiline и показывает индикатор в mode-line.
+
+Test toggle and indicator:
+  word word word
+  - C-n on "word" -> EVM[E 1/1]
+  - M -> message "Multiline mode: ON", mode-line shows EVM[E 1/1 M]
+  - M -> message "Multiline mode: OFF", mode-line shows EVM[E 1/1]
+
+NOTE: В текущей версии multiline-p — это флаг-заготовка.
+Реальная multiline логика (поиск паттернов через переносы строк)
+пока не реализована. Флаг сохраняется для будущего использования.
 
 
 9.3 Undo/Redo (u / C-r)

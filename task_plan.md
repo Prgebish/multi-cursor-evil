@@ -102,9 +102,9 @@
   - [x] 10.1 Интеграция с evil-surround
 
 - [ ] Phase 11: Testing and Polish
-  - [ ] 11.1 Написать тесты (ERT)
-  - [ ] 11.2 Тестирование на реальных сценариях
-  - [ ] 11.3 Оптимизация производительности
+  - [x] 11.1 Написать тесты (ERT) — 146 тестов
+  - [x] 11.2 Тестирование на реальных сценариях
+  - [x] 11.3 Оптимизация производительности
   - [ ] 11.4 Финальная документация
 
 ## Blocked / Open Questions
@@ -121,11 +121,35 @@
 - Hydra/Transient меню — нет (отложили)
 
 ## Status
-**Phase 10** — ПОЛНОСТЬЮ ЗАВЕРШЕНО.
+**Phase 11.3** — Оптимизация производительности завершена.
+
+### Оптимизации производительности (11.3)
+- Overlay updates: переиспользование через `move-overlay` вместо пересоздания
+- Buffer scan: убрано сканирование всего буфера в обычных операциях
+- Region sorting: binary insert O(n) вместо full sort O(n log n)
+- Batch creation: `evm--create-regions-batch` для Select All
+- O(1) duplicate check: hash-table вместо cl-find-if
+
+### Результаты тестирования (11.2)
+- Все 146 ERT тестов проходят успешно
+- Протестированы реальные сценарии:
+  - Variable renaming (C-n, select-all, change) — OK
+  - Multi-line cursor creation (C-Down) — OK
+  - Toggle mode (Tab) — OK
+  - Case conversion (U/u/~) — OK
+  - Skip/Remove cursors (q/Q) — OK
+  - Join lines (J) — OK
+  - Surround integration (S, ys, ds, cs) — OK
+  - Visual cursor selection (\\c) — OK
+  - Reselect last (\\gS) — OK
+  - Delete to EOL (D) — OK
+  - Yank/Paste with VM registers — OK
+  - Undo/Redo — работает в интерактивном режиме
 
 Реализовано:
 - `evm-core.el` — структуры данных, overlays, базовые операции, restrict to region
 - `evm.el` — entry point, keymaps, minor mode, команды
+- `test/evm-test.el` — 146 ERT тестов
 - Cursor mode: движение, i/a/I/A/o/O, x/X/r/~
 - Extend mode: y/d/c/p/P, U/u/~, o (flip)
 - Переключение режимов: Tab
@@ -141,11 +165,12 @@
 - >, < — indent/outdent с motion (>>, <<, >j, >ip)
 - gu, gU, g~ — case change с motion
 - Visual mode cursor selection: \\c в visual mode
-- Multiline mode: M toggle
+- Multiline mode: M toggle (флаг-заготовка, логика поиска не реализована)
 - Undo/Redo: u/C-r с восстановлением позиций курсоров
 - Reselect Last: \\gS восстанавливает последние курсоры с режимом
 - VM Registers: именованные регистры с интеграцией в evil ("ay, "ap)
 - evil-surround интеграция: S (extend), ys+motion (cursor), ds, cs
+- Mode-line: EVM[C/E idx/count R M] — показывает режим, restrict, multiline
 
 ## Files
 - `task_plan.md` — этот файл

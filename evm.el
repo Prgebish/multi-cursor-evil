@@ -241,8 +241,8 @@ Use this for buffer modifications to avoid position shifts affecting earlier reg
     (evm--save-for-reselect)
     ;; Sync registers
     (evm--sync-to-evil-registers)
-    ;; Remove overlays
-    (evm--remove-all-overlays)
+    ;; Remove overlays (thorough cleanup to catch any orphans)
+    (evm--remove-all-overlays-thorough)
     (evm--hide-match-preview)
     ;; Clear restriction
     (evm--clear-restrict)
@@ -865,28 +865,35 @@ Respects current restriction if active."
   (when (evm-active-p)
     (let ((pattern (car (evm-state-patterns evm--state)))
           (bounds (evm--restrict-bounds))
-          (cursor-mode-p (evm-cursor-mode-p)))
+          (cursor-mode-p (evm-cursor-mode-p))
+          (new-positions '())
+          (existing-positions (make-hash-table :test 'eq)))
       (unless pattern
         (user-error "No search pattern"))
+      ;; Build hash of existing positions for O(1) lookup
+      (dolist (r (evm-state-regions evm--state))
+        (puthash (if cursor-mode-p
+                     (evm--region-cursor-pos r)
+                   (marker-position (evm-region-beg r)))
+                 t existing-positions))
+      ;; Collect all new positions
       (save-excursion
         (goto-char (if bounds (car bounds) (point-min)))
         (while (re-search-forward pattern (when bounds (cdr bounds)) t)
           (let* ((beg (match-beginning 0))
-                 (end (match-end 0)))
-            (when (evm--point-in-restrict-p beg)
-              (unless (cl-find-if
-                       (lambda (r)
-                         ;; In cursor mode: check by cursor position (end)
-                         ;; In extend mode: check by region start (beg)
-                         (if cursor-mode-p
-                             (= (evm--region-cursor-pos r) end)
-                           (= (marker-position (evm-region-beg r)) beg)))
-                       (evm-state-regions evm--state))
-                ;; In cursor mode: point cursor at end
-                ;; In extend mode: full selection
-                (if cursor-mode-p
-                    (evm--create-region end end pattern)
-                  (evm--create-region beg end pattern)))))))
+                 (end (match-end 0))
+                 (check-pos (if cursor-mode-p end beg)))
+            (when (and (evm--point-in-restrict-p beg)
+                       (not (gethash check-pos existing-positions)))
+              ;; In cursor mode: point cursor at end
+              ;; In extend mode: full selection
+              (push (if cursor-mode-p (cons end end) (cons beg end))
+                    new-positions)
+              ;; Mark as existing to avoid duplicates from overlapping matches
+              (puthash check-pos t existing-positions)))))
+      ;; Create all regions in batch
+      (when new-positions
+        (evm--create-regions-batch (nreverse new-positions) pattern))
       (evm--update-all-overlays))))
 
 ;;; Mode switching commands
