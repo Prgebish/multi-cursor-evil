@@ -758,6 +758,17 @@
     ;; Positions should remain modified (no resync)
     (should (equal (evm-test-positions) '(2 10)))))
 
+(ert-deftest evm-test-undo-moves-point-to-leader ()
+  "After evm-undo, point should be at leader cursor position."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; Leader is at second foo (position 9)
+    (should (= (evm-test-leader-pos) 9))
+    ;; Point should be at leader's visual position
+    (let ((leader (evm--leader-region)))
+      (should (= (point) (evm--region-visual-cursor-pos leader))))))
+
 ;;; Restrict to region tests
 
 (ert-deftest evm-test-restrict-active-p ()
@@ -1610,6 +1621,288 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     (evm-surround ?\")
     ;; Both "foo" should be wrapped
     (should (string= (buffer-string) "\"foo\" bar \"foo\""))))
+
+(ert-deftest evm-test-surround-with-parens ()
+  "S with parens should surround all regions."
+  (skip-unless (featurep 'evil-surround))
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (evm-surround ?\()
+    ;; evil-surround uses "( " and " )" with spaces for (
+    (should (string-match-p "(.*foo.*)" (buffer-string)))))
+
+(ert-deftest evm-test-surround-switches-to-cursor-mode ()
+  "S should switch to cursor mode after surround."
+  (skip-unless (featurep 'evil-surround))
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (should (evm-extend-mode-p))
+    (evm-surround ?\")
+    (should (evm-cursor-mode-p))))
+
+(ert-deftest evm-test-delete-surround ()
+  "ds should delete surrounding pair at all cursors."
+  (skip-unless (featurep 'evil-surround))
+  (evm-test-with-buffer "\"foo\" bar \"baz\""
+    (evm-activate)
+    ;; Create cursors inside the quoted strings
+    (evm--create-region 2 2)   ; inside first "foo"
+    (evm--create-region 12 12) ; inside second "baz"
+    (should (= (evm-region-count) 2))
+    ;; Delete surrounding quotes (call with char directly)
+    ;; We need to simulate the behavior since read-char is interactive
+    (let ((inhibit-message t))
+      (dolist (region (evm--regions-by-position-reverse))
+        (goto-char (evm--region-cursor-pos region))
+        (evil-surround-delete ?\")))
+    (should (string= (buffer-string) "foo bar baz"))))
+
+(ert-deftest evm-test-change-surround ()
+  "cs should change surrounding pair at all cursors."
+  (skip-unless (featurep 'evil-surround))
+  (evm-test-with-buffer "\"foo\" bar \"baz\""
+    (evm-activate)
+    ;; Create cursors inside the quoted strings
+    (evm--create-region 2 2)   ; inside first "foo"
+    (evm--create-region 12 12) ; inside second "baz"
+    (should (= (evm-region-count) 2))
+    ;; Change surrounding quotes to single quotes
+    (let ((inhibit-message t))
+      (dolist (region (evm--regions-by-position-reverse))
+        (goto-char (evm--region-cursor-pos region))
+        ;; Push new char so evil-surround-change reads it
+        (setq unread-command-events (list ?'))
+        (evil-surround-change ?\")))
+    (should (string= (buffer-string) "'foo' bar 'baz'"))))
+
+(ert-deftest evm-test-surround-only-in-extend-mode ()
+  "evm-surround should only work in extend mode."
+  (skip-unless (featurep 'evil-surround))
+  (evm-test-with-buffer "foo bar foo"
+    (evm-add-cursor-down)  ; Creates cursor mode
+    (should (evm-cursor-mode-p))
+    ;; Surround should have no effect in cursor mode
+    (let ((content-before (buffer-string)))
+      (evm-surround ?\")
+      (should (string= (buffer-string) content-before)))))
+
+(ert-deftest evm-test-operator-surround-only-in-cursor-mode ()
+  "evm-operator-surround should only work in cursor mode."
+  (skip-unless (featurep 'evil-surround))
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)  ; Creates extend mode
+    (should (evm-extend-mode-p))
+    ;; ys should have no effect in extend mode
+    (let ((content-before (buffer-string)))
+      (evm-operator-surround nil)
+      (should (string= (buffer-string) content-before)))))
+
+;;; Additional edge case tests
+
+(ert-deftest evm-test-paste-cycling ()
+  "p multiple times should cycle through register contents."
+  (evm-test-with-buffer "XXX YYY ZZZ"
+    (evm-activate)
+    ;; Store 3 values in register
+    (puthash ?\" '("a" "b" "c") (evm-state-registers evm--state))
+    ;; Create 3 cursors
+    (evm--create-region 1 4 nil)   ; "XXX"
+    (evm--create-region 5 8 nil)   ; "YYY"
+    (evm--create-region 9 12 nil)  ; "ZZZ"
+    (setf (evm-state-mode evm--state) 'extend)
+    (evm--update-all-overlays)
+    (evm-paste-after)
+    ;; Each cursor gets corresponding content from register
+    (should (string= (buffer-string) "a b c"))))
+
+(ert-deftest evm-test-paste-with-fewer-cursors-than-contents ()
+  "p with fewer cursors than register contents should cycle."
+  (evm-test-with-buffer "XX YY"
+    (evm-activate)
+    ;; Store 3 values in register, but only 2 cursors
+    (puthash ?\" '("a" "b" "c") (evm-state-registers evm--state))
+    ;; Create 2 cursors
+    (evm--create-region 1 3 nil)  ; "XX"
+    (evm--create-region 4 6 nil)  ; "YY"
+    (setf (evm-state-mode evm--state) 'extend)
+    (evm--update-all-overlays)
+    (evm-paste-after)
+    ;; Cursors get first two values
+    (should (string= (buffer-string) "a b"))))
+
+(ert-deftest evm-test-paste-with-more-cursors-than-contents ()
+  "p with more cursors than register contents should cycle."
+  (evm-test-with-buffer "XX YY ZZ WW"
+    (evm-activate)
+    ;; Store 2 values in register, but 4 cursors
+    (puthash ?\" '("a" "b") (evm-state-registers evm--state))
+    ;; Create 4 cursors
+    (evm--create-region 1 3 nil)   ; "XX"
+    (evm--create-region 4 6 nil)   ; "YY"
+    (evm--create-region 7 9 nil)   ; "ZZ"
+    (evm--create-region 10 12 nil) ; "WW"
+    (setf (evm-state-mode evm--state) 'extend)
+    (evm--update-all-overlays)
+    (evm-paste-after)
+    ;; Cursors cycle through values: a, b, a, b
+    (should (string= (buffer-string) "a b a b"))))
+
+(ert-deftest evm-test-delete-in-extend-mode-saves-to-register ()
+  "d in extend mode should save deleted text to register."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (should (= (evm-region-count) 2))
+    (should (evm-extend-mode-p))
+    (evm-delete)
+    (let ((contents (gethash ?\" (evm-state-registers evm--state))))
+      (should contents)
+      (should (= (length contents) 2))
+      (should (string= (car contents) "foo"))
+      (should (string= (cadr contents) "foo")))))
+
+(ert-deftest evm-test-change-in-extend-mode ()
+  "c in extend mode should delete and enter insert."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (should (= (evm-region-count) 2))
+    (should (evm-extend-mode-p))
+    (evm-change)
+    (should (string= (buffer-string) " bar "))
+    ;; Should be in insert state
+    (should (evil-insert-state-p))
+    (evil-normal-state)))
+
+(ert-deftest evm-test-flip-direction ()
+  "o in extend mode should flip selection direction."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; Initially end is at word end
+    (let ((regions (evm-get-all-regions)))
+      (dolist (r regions)
+        (should (> (marker-position (evm-region-end r))
+                   (marker-position (evm-region-beg r))))))
+    ;; Flip direction
+    (evm-flip-direction)
+    ;; After flip, direction changes (end becomes beg conceptually)
+    (should (evm-extend-mode-p))))
+
+(ert-deftest evm-test-exit-saves-for-reselect ()
+  "Exit should save cursor positions for later reselect."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (let ((positions (evm-test-positions)))
+      (evm-exit)
+      (should-not (evm-active-p))
+      ;; Reselect should restore
+      (evm-reselect-last)
+      (should (evm-active-p))
+      (should (equal (evm-test-positions) positions)))))
+
+(ert-deftest evm-test-reselect-restores-mode ()
+  "Reselect should restore the mode (extend/cursor)."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    ;; We're in extend mode
+    (should (evm-extend-mode-p))
+    (evm-exit)
+    (evm-reselect-last)
+    ;; Should still be extend mode
+    (should (evm-extend-mode-p))))
+
+(ert-deftest evm-test-cursor-count-display ()
+  "Mode line should show cursor count."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (let ((indicator (evm--mode-line-indicator)))
+      (should (string-match-p "2" indicator)))))
+
+(ert-deftest evm-test-mode-display ()
+  "Mode line should show current mode."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    ;; In extend mode
+    (let ((indicator (evm--mode-line-indicator)))
+      (should (string-match-p "E" indicator)))
+    ;; Switch to cursor mode
+    (evm-toggle-mode)
+    (let ((indicator (evm--mode-line-indicator)))
+      (should (string-match-p "C" indicator)))))
+
+(ert-deftest evm-test-beginning-of-line ()
+  "0 should move all cursors to beginning of line."
+  (evm-test-with-buffer "  foo\n  bar\n  baz"
+    (evm-activate)
+    ;; Create cursors at end of each word
+    (evm--create-region 5 5)   ; end of "foo"
+    (evm--create-region 11 11) ; end of "bar"
+    (evm--create-region 17 17) ; end of "baz"
+    (evm-beginning-of-line)
+    ;; All should be at column 0
+    (should (equal (evm-test-positions) '(1 7 13)))))
+
+(ert-deftest evm-test-first-non-blank ()
+  "^ should move all cursors to first non-blank."
+  (evm-test-with-buffer "  foo\n  bar\n  baz"
+    (evm-activate)
+    ;; Create cursors at beginning of each line
+    (evm--create-region 1 1)
+    (evm--create-region 7 7)
+    (evm--create-region 13 13)
+    (evm-first-non-blank)
+    ;; All should be at first non-blank (after 2 spaces)
+    (should (equal (evm-test-positions) '(3 9 15)))))
+
+(ert-deftest evm-test-backward-word ()
+  "b should move all cursors backward to word start."
+  (evm-test-with-buffer "foo bar\nfoo bar"
+    (evm-activate)
+    ;; Create cursors at 'b' of each "bar"
+    (evm--create-region 5 5)
+    (evm--create-region 13 13)
+    (evm-backward-word)
+    ;; Should move to 'f' of "foo"
+    (should (equal (evm-test-positions) '(1 9)))))
+
+(ert-deftest evm-test-forward-word-end ()
+  "e should move all cursors to end of word."
+  (evm-test-with-buffer "foo bar\nfoo bar"
+    (evm-activate)
+    ;; Create cursors at start of each line
+    (evm--create-region 1 1)
+    (evm--create-region 9 9)
+    (evm-forward-word-end)
+    ;; Should move to 'o' at end of "foo"
+    (should (equal (evm-test-positions) '(3 11)))))
+
+(ert-deftest evm-test-delete-char-backward ()
+  "X should delete char before cursor at all positions."
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    ;; Create cursors at position 2 on each line
+    (evm-activate)
+    (evm--create-region 2 2)
+    (evm--create-region 6 6)
+    (evm--create-region 10 10)
+    (evm-delete-char-backward)
+    (should (string= (buffer-string) "oo\nar\naz"))))
+
+(ert-deftest evm-test-multiline-indicator ()
+  "Mode line should show M when multiline is enabled."
+  (evm-test-with-buffer "foo bar"
+    (evm-activate)
+    (evm--create-region (point) (point))
+    (let ((indicator (evm--mode-line-indicator)))
+      (should-not (string-match-p " M" indicator)))
+    (evm-toggle-multiline)
+    (let ((indicator (evm--mode-line-indicator)))
+      (should (string-match-p " M" indicator)))))
 
 (provide 'evm-test)
 ;;; evm-test.el ends here

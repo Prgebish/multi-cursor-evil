@@ -2116,33 +2116,33 @@ In visual-char mode: creates a cursor at start and end of selection."
 
 (defun evm-undo ()
   "Undo last change and resync cursor positions to pattern.
-Preserves cursor position (unlike standard evil-undo which jumps to change location)."
+Moves cursor to leader position after resync."
   (interactive)
   (when (evm-active-p)
-    (let ((pos-before (point)))
-      ;; Call evil-undo which handles undo-tree properly
-      (evil-undo 1)
-      ;; Resync regions to pattern matches
-      (when (car (evm-state-patterns evm--state))
-        (evm--resync-regions-to-pattern))
-      (evm--update-all-overlays)
-      ;; Restore cursor position (evil-undo moves it to change location)
-      (goto-char (min pos-before (point-max))))))
+    ;; Call evil-undo which handles undo-tree properly
+    (evil-undo 1)
+    ;; Resync regions to pattern matches
+    (when (car (evm-state-patterns evm--state))
+      (evm--resync-regions-to-pattern))
+    (evm--update-all-overlays)
+    ;; Move cursor to leader position (regions may have moved after resync)
+    (when-let ((leader (evm--leader-region)))
+      (goto-char (evm--region-visual-cursor-pos leader)))))
 
 (defun evm-redo ()
   "Redo last undone change and resync cursor positions to pattern.
-Preserves cursor position (unlike standard evil-redo which jumps to change location)."
+Moves cursor to leader position after resync."
   (interactive)
   (when (evm-active-p)
-    (let ((pos-before (point)))
-      ;; Call evil-redo which handles undo-tree properly
-      (evil-redo 1)
-      ;; Resync regions to pattern matches
-      (when (car (evm-state-patterns evm--state))
-        (evm--resync-regions-to-pattern))
-      (evm--update-all-overlays)
-      ;; Restore cursor position (evil-redo moves it to change location)
-      (goto-char (min pos-before (point-max))))))
+    ;; Call evil-redo which handles undo-tree properly
+    (evil-redo 1)
+    ;; Resync regions to pattern matches
+    (when (car (evm-state-patterns evm--state))
+      (evm--resync-regions-to-pattern))
+    (evm--update-all-overlays)
+    ;; Move cursor to leader position (regions may have moved after resync)
+    (when-let ((leader (evm--leader-region)))
+      (goto-char (evm--region-visual-cursor-pos leader)))))
 
 ;;; Improved Reselect Last (Phase 9.4)
 

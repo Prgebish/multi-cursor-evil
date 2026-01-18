@@ -630,13 +630,15 @@ In extend mode: go to eol so visual cursor lands on last char."
     (let* ((mode (evm-state-mode evm--state))
            (count (evm-region-count))
            (leader-idx (1+ (or (evm--leader-index) 0)))
-           (restricted (evm--restrict-active-p)))
+           (restricted (evm--restrict-active-p))
+           (multiline (evm-state-multiline-p evm--state)))
       (propertize
-       (format " EVM[%s %d/%d%s]"
+       (format " EVM[%s %d/%d%s%s]"
                (if (eq mode 'cursor) "C" "E")
                leader-idx
                count
-               (if restricted " R" ""))
+               (if restricted " R" "")
+               (if multiline " M" ""))
        'face 'evm-mode-line-face))))
 
 ;;; Overlapping regions check
