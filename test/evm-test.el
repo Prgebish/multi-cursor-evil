@@ -1579,5 +1579,37 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
       (should (= (length (evm-snapshot-regions-data snapshot)) 2))
       (should (eq (evm-snapshot-mode snapshot) 'extend)))))
 
+;;; evil-surround integration tests (10.1)
+
+(ert-deftest evm-test-surround-available-check ()
+  "evm--surround-available-p should check for evil-surround."
+  (evm-test-with-buffer "foo"
+    ;; Should return based on whether evil-surround is loaded
+    (should (eq (evm--surround-available-p) (featurep 'evil-surround)))))
+
+(ert-deftest evm-test-surround-commands-exist ()
+  "Surround commands should be defined."
+  (should (commandp 'evm-surround))
+  (should (commandp 'evm-operator-surround))
+  (should (commandp 'evm-delete-surround))
+  (should (commandp 'evm-change-surround)))
+
+(ert-deftest evm-test-surround-keybinding-extend ()
+  "S should be bound to evm-surround in extend mode."
+  (should (eq (lookup-key evm-extend-map (kbd "S")) 'evm-surround)))
+
+(ert-deftest evm-test-surround-in-extend-mode ()
+  "S in extend mode should surround all regions when evil-surround loaded."
+  (skip-unless (featurep 'evil-surround))
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-find-next)
+    (should (= (evm-region-count) 2))
+    (should (evm-extend-mode-p))
+    ;; Surround with quotes (call directly with char)
+    (evm-surround ?\")
+    ;; Both "foo" should be wrapped
+    (should (string= (buffer-string) "\"foo\" bar \"foo\""))))
+
 (provide 'evm-test)
 ;;; evm-test.el ends here

@@ -129,6 +129,8 @@
 (define-key evm-extend-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
 ;; Pass " to evil for register selection (e.g. "ay, "ap)
 (define-key evm-extend-map (kbd "\"") #'evil-use-register)
+;; Surround (evil-surround integration)
+(define-key evm-extend-map (kbd "S") #'evm-surround)
 
 ;; Set parent keymaps
 (set-keymap-parent evm-cursor-map evm-mode-map)
@@ -1013,7 +1015,8 @@ Respects current restriction if active."
 
 (defun evm-yank ()
   "Yank content of all regions to VM register.
-Uses `evil-this-register' if set (via \"a prefix), otherwise default register."
+Uses `evil-this-register' if set (via \"a prefix), otherwise default register.
+Also syncs to evil registers for interoperability."
   (interactive)
   (when (evm-extend-mode-p)
     (let* ((register (or evil-this-register ?\"))
@@ -1021,15 +1024,22 @@ Uses `evil-this-register' if set (via \"a prefix), otherwise default register."
                                (buffer-substring-no-properties
                                 (marker-position (evm-region-beg r))
                                 (marker-position (evm-region-end r))))
-                             (evm-state-regions evm--state))))
+                             (evm-state-regions evm--state)))
+           (combined (string-join contents "\n")))
       ;; Handle uppercase registers (append mode)
       (if (and (>= register ?A) (<= register ?Z))
           (let* ((lower (downcase register))
                  (existing (gethash lower (evm-state-registers evm--state))))
             (puthash lower (append existing contents)
                      (evm-state-registers evm--state))
+            ;; Sync to evil register (append)
+            (evil-set-register lower
+                               (concat (or (evil-get-register lower t) "")
+                                       "\n" combined))
             (message "Appended %d regions to register '%c'" (length contents) lower))
         (puthash register contents (evm-state-registers evm--state))
+        ;; Sync to evil register
+        (evil-set-register register combined)
         (message "Yanked %d regions to register '%c'" (length contents) register))
       (kill-new (car contents))
       ;; Clear evil-this-register after use
@@ -1080,6 +1090,7 @@ In extend mode, replaces selected regions. In cursor mode, inserts before cursor
 (defun evm--paste-impl (after)
   "Paste implementation. AFTER determines position (t=after cursor, nil=before).
 Uses `evil-this-register' if set (via \"a prefix), otherwise default register.
+Falls back to evil registers if VM register is empty.
 In extend mode, replaces selected regions. In cursor mode, inserts at cursor."
   (evm--push-undo-snapshot)
   (let* ((register (or evil-this-register ?\"))
@@ -1087,7 +1098,11 @@ In extend mode, replaces selected regions. In cursor mode, inserts at cursor."
          (lookup-reg (if (and (>= register ?A) (<= register ?Z))
                          (downcase register)
                        register))
-         (contents (gethash lookup-reg (evm-state-registers evm--state)))
+         ;; Try VM register first, then fall back to evil register
+         (contents (or (gethash lookup-reg (evm-state-registers evm--state))
+                       ;; Fallback: get from evil register and wrap in list
+                       (when-let ((evil-content (evil-get-register lookup-reg t)))
+                         (list evil-content))))
          (sorted-regions (evm--regions-by-position))
          (num-regions (length sorted-regions))
          (num-contents (length contents))
@@ -1675,35 +1690,56 @@ Applies the operator to all cursors."
 (defun evm-operator-delete (count)
   "Delete operator: wait for motion, then delete at all cursors.
 COUNT is optional prefix argument for patterns like 2dw.
-Examples: dw (delete word), d3w (delete 3 words), dd (delete line)."
+Examples: dw (delete word), d3w (delete 3 words), dd (delete line).
+Special: ds + char deletes surround (evil-surround integration)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] d")
-    (evm--run-operator-with-motion 'delete count ?d)))
+    ;; Peek next char - if 's', delegate to surround
+    (let ((char (read-char)))
+      (if (= char ?s)
+          (evm-delete-surround)
+        ;; Put char back for normal motion parsing
+        (setq unread-command-events (list char))
+        (evm--run-operator-with-motion 'delete count ?d)))))
 
 (defun evm-operator-change (count)
   "Change operator: delete with motion, then enter insert mode.
 COUNT is optional prefix argument for patterns like 2cw.
-Examples: cw (change word), ciw (change inner word), cc (change line)."
+Examples: cw (change word), ciw (change inner word), cc (change line).
+Special: cs + old + new changes surround (evil-surround integration)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] c")
-    (let ((result (evm--run-operator-with-motion 'change count ?c)))
-      (when (and result (plist-get result :texts))
-        ;; Enter insert mode
-        (evm--start-insert-mode)
-        (evil-insert-state)))))
+    ;; Peek next char - if 's', delegate to surround
+    (let ((char (read-char)))
+      (if (= char ?s)
+          (evm-change-surround)
+        ;; Put char back for normal motion parsing
+        (setq unread-command-events (list char))
+        (let ((result (evm--run-operator-with-motion 'change count ?c)))
+          (when (and result (plist-get result :texts))
+            ;; Enter insert mode
+            (evm--start-insert-mode)
+            (evil-insert-state)))))))
 
 (defun evm-operator-yank (count)
   "Yank operator: copy text defined by motion at all cursors.
 COUNT is optional prefix argument for patterns like 2yw.
-Examples: yw (yank word), yiw (yank inner word), yy (yank line)."
+Examples: yw (yank word), yiw (yank inner word), yy (yank line).
+Special: ys + motion + char adds surround (evil-surround integration)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] y")
-    (let ((result (evm--run-operator-with-motion 'yank count ?y)))
-      (when result
-        (message "Yanked %d regions" (length (plist-get result :texts)))))))
+    ;; Peek next char - if 's', delegate to surround
+    (let ((char (read-char)))
+      (if (= char ?s)
+          (evm-operator-surround count)
+        ;; Put char back for normal motion parsing
+        (setq unread-command-events (list char))
+        (let ((result (evm--run-operator-with-motion 'yank count ?y)))
+          (when result
+            (message "Yanked %d regions" (length (plist-get result :texts)))))))))
 
 ;; Shortcuts for common operations
 (defun evm-delete-to-eol (&optional for-change)
@@ -2094,9 +2130,19 @@ Preserves cursor position (unlike standard evil-undo which jumps to change locat
       (goto-char (min pos-before (point-max))))))
 
 (defun evm-redo ()
-  "Redo (not yet implemented - use evil-redo or C-r)."
+  "Redo last undone change and resync cursor positions to pattern.
+Preserves cursor position (unlike standard evil-redo which jumps to change location)."
   (interactive)
-  (message "Use evil-redo (C-r) for redo"))
+  (when (evm-active-p)
+    (let ((pos-before (point)))
+      ;; Call evil-redo which handles undo-tree properly
+      (evil-redo 1)
+      ;; Resync regions to pattern matches
+      (when (car (evm-state-patterns evm--state))
+        (evm--resync-regions-to-pattern))
+      (evm--update-all-overlays)
+      ;; Restore cursor position (evil-redo moves it to change location)
+      (goto-char (min pos-before (point-max))))))
 
 ;;; Improved Reselect Last (Phase 9.4)
 
@@ -2165,21 +2211,29 @@ Preserves cursor position (unlike standard evil-undo which jumps to change locat
 
 (defun evm-yank-to-register (register)
   "Yank content of all regions to REGISTER.
-REGISTER is a character (a-z for named, \" for default)."
+REGISTER is a character (a-z for named, \" for default).
+Also syncs to evil registers for interoperability."
   (interactive "cYank to register: ")
   (when (evm-extend-mode-p)
-    (let ((contents (mapcar (lambda (r)
-                              (buffer-substring-no-properties
-                               (marker-position (evm-region-beg r))
-                               (marker-position (evm-region-end r))))
-                            (evm-state-regions evm--state))))
+    (let* ((contents (mapcar (lambda (r)
+                               (buffer-substring-no-properties
+                                (marker-position (evm-region-beg r))
+                                (marker-position (evm-region-end r))))
+                             (evm-state-regions evm--state)))
+           (combined (string-join contents "\n")))
       ;; Uppercase register appends
       (if (and (>= register ?A) (<= register ?Z))
           (let* ((lower (downcase register))
                  (existing (gethash lower (evm-state-registers evm--state))))
             (puthash lower (append existing contents)
-                     (evm-state-registers evm--state)))
-        (puthash register contents (evm-state-registers evm--state)))
+                     (evm-state-registers evm--state))
+            ;; Sync to evil register (append)
+            (evil-set-register lower
+                               (concat (or (evil-get-register lower t) "")
+                                       "\n" combined)))
+        (puthash register contents (evm-state-registers evm--state))
+        ;; Sync to evil register
+        (evil-set-register register combined))
       (kill-new (car contents))
       (message "Yanked %d regions to register '%c'" (length contents) register))))
 
@@ -2250,6 +2304,189 @@ When enabled, allows search patterns to span multiple lines."
           (not (evm-state-multiline-p evm--state)))
     (message "Multiline mode: %s"
              (if (evm-state-multiline-p evm--state) "ON" "OFF"))))
+
+;;; evil-surround integration (Phase 10.1)
+
+;; Forward declarations for evil-surround functions
+(declare-function evil-surround-region "evil-surround" (beg end type char &optional force-new-line))
+(declare-function evil-surround-delete "evil-surround" (char &optional outer inner))
+(declare-function evil-surround-change "evil-surround" (char &optional outer inner))
+
+(defun evm--surround-available-p ()
+  "Return t if evil-surround is available."
+  (featurep 'evil-surround))
+
+(defun evm-surround (char)
+  "Surround all regions with CHAR.
+Works in extend mode. Reads a surround character and wraps all regions."
+  (interactive (list (read-char "Surround with: ")))
+  (unless (evm--surround-available-p)
+    (user-error "evil-surround is not loaded"))
+  (when (evm-extend-mode-p)
+    (let ((undo-handle (prepare-change-group)))
+      (evm--push-undo-snapshot)
+      (unwind-protect
+          (progn
+            (let ((regions (evm--regions-by-position-reverse))
+                  (inhibit-modification-hooks t))
+              (remove-hook 'post-command-hook #'evm--post-command t)
+              (unwind-protect
+                  (dolist (region regions)
+                    (let ((beg (marker-position (evm-region-beg region)))
+                          (end (marker-position (evm-region-end region))))
+                      (evil-surround-region beg end 'inclusive char)))
+                (add-hook 'post-command-hook #'evm--post-command nil t))))
+        (undo-amalgamate-change-group undo-handle)))
+    (evm--clamp-markers)
+    (evm--check-and-merge-overlapping)
+    (evm--enter-cursor-mode)
+    (evm--update-keymap)
+    (message "Surrounded %d regions" (evm-region-count))))
+
+(defun evm-operator-surround (count)
+  "Surround operator: wait for motion, then surround at all cursors.
+COUNT is optional prefix argument.
+Examples: ysiw\" (surround word with \"), ys$) (surround to eol with parens)."
+  (interactive "P")
+  (unless (evm--surround-available-p)
+    (user-error "evil-surround is not loaded"))
+  (when (evm-cursor-mode-p)
+    (message "[EVM] ys")
+    (evm--run-surround-operator count)))
+
+(defun evm--run-surround-operator (&optional prefix-count)
+  "Run surround operator with a motion parsed from user input.
+PREFIX-COUNT is an optional count from prefix argument."
+  (let ((motion (evm--parse-motion ?s)))  ; ?s for ys+s = yss (line surround)
+    (unless motion
+      (message "Cancelled")
+      (cl-return-from evm--run-surround-operator nil))
+    ;; Read surround character
+    (let ((char (read-char "Surround with: ")))
+      (when (= char 27)  ; ESC
+        (message "Cancelled")
+        (cl-return-from evm--run-surround-operator nil))
+      (let ((keys (plist-get motion :keys))
+            (line-p (plist-get motion :line))
+            (count (let ((motion-count (plist-get motion :count))
+                         (pre (and prefix-count (prefix-numeric-value prefix-count))))
+                     (cond
+                      ((and pre motion-count) (* pre motion-count))
+                      (pre pre)
+                      (motion-count motion-count)
+                      (t nil))))
+            (undo-handle (prepare-change-group)))
+        (evm--push-undo-snapshot)
+        (unwind-protect
+            (progn
+              (let ((regions (evm--regions-by-position-reverse))
+                    (inhibit-modification-hooks t))
+                (remove-hook 'post-command-hook #'evm--post-command t)
+                (unwind-protect
+                    (dolist (region regions)
+                      (goto-char (evm--region-cursor-pos region))
+                      (let ((range (if line-p
+                                       (evm--get-line-range count)
+                                     (evm--get-motion-range keys count))))
+                        (when range
+                          (let ((beg (car range))
+                                (end (cadr range)))
+                            (when (and beg end (> end beg))
+                              (evil-surround-region beg end
+                                                   (if line-p 'line 'inclusive)
+                                                   char))))))
+                  (add-hook 'post-command-hook #'evm--post-command nil t))))
+          (undo-amalgamate-change-group undo-handle)))
+      (evm--clamp-markers)
+      (evm--check-and-merge-overlapping)
+      (evm--update-all-overlays)
+      (when-let ((leader (evm--leader-region)))
+        (goto-char (evm--region-cursor-pos leader)))
+      (message "Surrounded %d regions" (evm-region-count)))))
+
+(defun evm--get-line-range (&optional count)
+  "Get range for COUNT lines starting from current position."
+  (let* ((count (or count 1))
+         (beg (line-beginning-position))
+         (end (save-excursion
+                (forward-line (1- count))
+                (line-end-position))))
+    (list beg end)))
+
+(defun evm-delete-surround ()
+  "Delete surrounding pair at all cursors.
+Reads a surround character and deletes the pair around each cursor."
+  (interactive)
+  (unless (evm--surround-available-p)
+    (user-error "evil-surround is not loaded"))
+  (when (evm-cursor-mode-p)
+    (message "[EVM] ds")
+    (let ((char (read-char "Delete surround: ")))
+      (when (= char 27)  ; ESC
+        (message "Cancelled")
+        (cl-return-from evm-delete-surround nil))
+      (let ((undo-handle (prepare-change-group)))
+        (evm--push-undo-snapshot)
+        (unwind-protect
+            (progn
+              (let ((regions (evm--regions-by-position-reverse))
+                    (inhibit-modification-hooks t))
+                (remove-hook 'post-command-hook #'evm--post-command t)
+                (unwind-protect
+                    (dolist (region regions)
+                      (goto-char (evm--region-cursor-pos region))
+                      (evil-surround-delete char)
+                      ;; Update cursor position
+                      (evm--region-set-cursor-pos region (point)))
+                  (add-hook 'post-command-hook #'evm--post-command nil t))))
+          (undo-amalgamate-change-group undo-handle)))
+      (evm--clamp-markers)
+      (evm--check-and-merge-overlapping)
+      (evm--update-all-overlays)
+      (when-let ((leader (evm--leader-region)))
+        (goto-char (evm--region-cursor-pos leader)))
+      (message "Deleted surround at %d positions" (evm-region-count)))))
+
+(defun evm-change-surround ()
+  "Change surrounding pair at all cursors.
+Reads old and new surround characters and changes the pair around each cursor."
+  (interactive)
+  (unless (evm--surround-available-p)
+    (user-error "evil-surround is not loaded"))
+  (when (evm-cursor-mode-p)
+    (message "[EVM] cs")
+    (let ((old-char (read-char "Change surround: ")))
+      (when (= old-char 27)  ; ESC
+        (message "Cancelled")
+        (cl-return-from evm-change-surround nil))
+      (let ((new-char (read-char (format "Change %c to: " old-char))))
+        (when (= new-char 27)  ; ESC
+          (message "Cancelled")
+          (cl-return-from evm-change-surround nil))
+        (let ((undo-handle (prepare-change-group))
+              (num-regions (evm-region-count)))
+          (evm--push-undo-snapshot)
+          (unwind-protect
+              (progn
+                (let ((regions (evm--regions-by-position-reverse))
+                      (inhibit-modification-hooks t))
+                  (remove-hook 'post-command-hook #'evm--post-command t)
+                  (unwind-protect
+                      (dolist (region regions)
+                        (goto-char (evm--region-cursor-pos region))
+                        ;; Push new-char to unread-command-events so
+                        ;; evil-surround-change will read it
+                        (setq unread-command-events (list new-char))
+                        (evil-surround-change old-char)
+                        (evm--region-set-cursor-pos region (point)))
+                    (add-hook 'post-command-hook #'evm--post-command nil t))))
+            (undo-amalgamate-change-group undo-handle))
+          (evm--clamp-markers)
+          (evm--check-and-merge-overlapping)
+          (evm--update-all-overlays)
+          (when-let ((leader (evm--leader-region)))
+            (goto-char (evm--region-cursor-pos leader)))
+          (message "Changed surround at %d positions" num-regions))))))
 
 ;;; Global keybindings for activation
 

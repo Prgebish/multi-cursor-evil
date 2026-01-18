@@ -91,15 +91,15 @@
     - [x] `gu`, `gU` — case change с motion (guu, gUU, guw)
     - [x] `g~` — toggle case с motion (g~~, g~w)
 
-- [ ] Phase 9: Special Features
-  - [ ] 9.1 Visual mode cursor selection (создание курсоров из visual selection)
-  - [ ] 9.2 Multiline mode
-  - [ ] 9.3 Undo/Redo с восстановлением курсоров
-  - [ ] 9.4 Reselect Last
-  - [ ] 9.5 VM Registers
+- [x] Phase 9: Special Features
+  - [x] 9.1 Visual mode cursor selection (создание курсоров из visual selection)
+  - [x] 9.2 Multiline mode
+  - [x] 9.3 Undo/Redo с восстановлением курсоров
+  - [x] 9.4 Reselect Last
+  - [x] 9.5 VM Registers (интеграция с evil registers)
 
-- [ ] Phase 10: Integration
-  - [ ] 10.1 Интеграция с evil-surround
+- [x] Phase 10: Integration
+  - [x] 10.1 Интеграция с evil-surround
 
 - [ ] Phase 11: Testing and Polish
   - [ ] 11.1 Написать тесты (ERT)
@@ -121,7 +121,7 @@
 - Hydra/Transient меню — нет (отложили)
 
 ## Status
-**Phase 8** — ПОЛНОСТЬЮ ЗАВЕРШЕНО (включая 8.5: J, >, <, gu, gU, g~).
+**Phase 10** — ПОЛНОСТЬЮ ЗАВЕРШЕНО.
 
 Реализовано:
 - `evm-core.el` — структуры данных, overlays, базовые операции, restrict to region
@@ -140,6 +140,12 @@
 - J — join lines
 - >, < — indent/outdent с motion (>>, <<, >j, >ip)
 - gu, gU, g~ — case change с motion
+- Visual mode cursor selection: \\c в visual mode
+- Multiline mode: M toggle
+- Undo/Redo: u/C-r с восстановлением позиций курсоров
+- Reselect Last: \\gS восстанавливает последние курсоры с режимом
+- VM Registers: именованные регистры с интеграцией в evil ("ay, "ap)
+- evil-surround интеграция: S (extend), ys+motion (cursor), ds, cs
 
 ## Files
 - `task_plan.md` — этот файл
