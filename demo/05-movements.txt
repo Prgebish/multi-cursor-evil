@@ -45,11 +45,15 @@ The column memory resets when you use any horizontal motion
   1. Place cursor on "=" in the "stride" line below
   2. Press C-Down once (2 cursors)
   3. Press j — both cursors move down one line.
-     Notice they stay in the same column even though
-     the "gap" line is shorter — the cursor lands on
-     the last character (column memory is preserved)
-  4. Press k twice to move back to original lines
-  5. Press Esc when done
+     The "offset" cursor stays at the "=" column, but
+     the "gap" line is too short — that cursor lands on
+     the last character "p" instead
+  4. Press j again — the cursor that was on "gap" moves
+     to "slack" and snaps back to the "=" column!
+     The desired column was remembered through the short line
+  5. Press k twice to return to original lines —
+     both cursors are at "=" again (column restored)
+  6. Press Esc when done
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   span   = 10
@@ -180,7 +184,7 @@ navigate to the edit point, then type or operate.
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 > Try it: jump to the value and delete it.
-  1. Place cursor on line 1 below, press C-Down twice
+  1. Place cursor on "n" of "nick" below, press C-Down twice
   2. Press f then : to land on ":"
   3. Press l twice to reach the value
   4. Press d then $ to delete to end of line
