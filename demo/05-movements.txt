@@ -1,0 +1,223 @@
+EVM Tutorial 05: Moving All Cursors
+=====================================
+
+Every movement key in evm moves ALL cursors at once. This is
+the foundation for multi-cursor editing: you navigate to the
+right position, then type or operate.
+
+Movements work in both cursor mode and extend mode:
+  Cursor mode — cursors move as points
+  Extend mode — selections grow or shrink
+
+
+Lesson 1: Character Movement (h / l)
+--------------------------------------
+
+h moves all cursors one character left.
+l moves all cursors one character right.
+
+> Try it:
+  1. Place cursor on "x" on line 1 below, press C-Down twice
+     (3 cursors in cursor mode)
+  2. Press l three times — all cursors move right by 3
+  3. Press h once — all cursors move left by 1
+  4. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  x = 100
+  x = 200
+  x = 300
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 2: Vertical Movement (j / k)
+--------------------------------------
+
+j moves all cursors one line down.
+k moves all cursors one line up.
+
+Column is preserved: if your cursors are at column 5, they
+stay at column 5 even when moving through shorter lines.
+The column memory resets when you use any horizontal motion
+(h, l, w, b, e, 0, ^, $, f, t).
+
+> Try it:
+  1. Place cursor on "=" in the "stride" line below
+  2. Press C-Down once (2 cursors)
+  3. Press j — both cursors move down one line.
+     Notice they stay in the same column even though
+     the "gap" line is shorter — the cursor lands on
+     the last character (column memory is preserved)
+  4. Press k twice to move back to original lines
+  5. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  span   = 10
+  stride = 20
+  offset = 30
+  gap
+  slack  = 50
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 3: Word Movement (w / b / e)
+--------------------------------------
+
+w moves to the start of the next word.
+b moves to the start of the previous word.
+e moves to the end of the current/next word.
+
+These use evil's word definition: letters/digits are "word"
+characters, punctuation forms separate words.
+
+> Try it:
+  1. Place cursor on the first character of line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press w — cursors land on "." (punctuation is a
+     separate word in evil)
+  4. Press w again — now on "P" of "Println"
+  5. Press b — one word back (on "." again)
+  6. Press e — to end of current word
+  7. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  fmt.Println("alpha")
+  fmt.Println("bravo")
+  fmt.Println("charlie")
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 4: Line Boundaries (0 / ^ / $)
+----------------------------------------
+
+0 moves to the very beginning of the line (column 0).
+^ moves to the first non-blank character.
+$ moves to the last character of the line.
+
+> Try it:
+  1. Place cursor anywhere on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press 0 — cursors jump to column 0 (the leading space)
+  4. Press ^ — cursors jump to first non-blank character
+  5. Press $ — cursors jump to the last ";" on each line
+  6. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    yield val_a;
+    yield val_b;
+    yield val_c;
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 5: Find Character (f / t / F / T)
+-------------------------------------------
+
+f + char: move forward to the character (cursor ON it).
+t + char: move forward to just BEFORE the character.
+F + char: move backward to the character (cursor ON it).
+T + char: move backward to just AFTER the character.
+
+These only search within the current line of each cursor.
+If the character is not found, the cursor stays put.
+
+> Try it (f):
+  1. Place cursor at column 0 on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press f then ( — all cursors land on "("
+  4. Press l — now on the first character inside the parens
+  5. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  rand(10, 20)
+  rand(30, 40)
+  rand(50, 60)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+> Try it (t):
+  1. Place cursor at column 0 on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press t then = — cursors land just BEFORE "="
+     (on the space before it)
+  4. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  baud = 9600
+  freq = 44100
+  gain = 75
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+> Try it (F):
+  1. Place cursor on the last character of line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press F then ( — all cursors jump back to "("
+  4. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  sum(10, 20)
+  sum(30, 40)
+  sum(50, 60)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 6: Combining Movements
+-------------------------------
+
+Movements chain naturally. A common pattern: create cursors,
+navigate to the edit point, then type or operate.
+
+> Try it: add a semicolon at the end of each line.
+  1. Place cursor on line 1 below, press C-Down twice
+  2. Press $ to jump to end of line
+  3. Press a to append after cursor — you're now in
+     insert mode at all 3 lines simultaneously
+  4. Type ";" — semicolons appear on all 3 lines
+  5. Press Esc to leave insert mode, then Esc to exit evm
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  let cols = 80
+  let rows = 24
+  let tabs = 4
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+> Try it: jump to the value and delete it.
+  1. Place cursor on line 1 below, press C-Down twice
+  2. Press f then : to land on ":"
+  3. Press l twice to reach the value
+  4. Press d then $ to delete to end of line
+  5. Press Esc (then u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  nick: Aspen
+  rank: elite
+  clan: Forge
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 7: Movements in Extend Mode
+-------------------------------------
+
+In extend mode, the same movement keys grow or shrink
+selections instead of moving point cursors.
+
+The anchor stays fixed. The active end follows your motion.
+
+> Try it:
+  1. Place cursor on the first character of line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press Tab — switch to extend mode (1-character
+     selections)
+  4. Press e — selections grow to cover the first word
+     on each line
+  5. Press $ — selections grow to end of each line
+  6. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  addr = 0.0.0.0
+  proto = tcp
+  tier = staging
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+That's it for Tutorial 05!
+
+Next: 06-insert-mode.txt — i/a/I/A/o/O with real-time replication.

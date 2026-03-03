@@ -73,6 +73,45 @@
     (should (evm-active-p))
     (should (= (evm-region-count) 2))))
 
+(ert-deftest evm-test-add-cursor-down-preserves-column-through-short-line ()
+  "C-Down should preserve target column through short lines."
+  (evm-test-with-buffer "abcde\nab\nabcde\nabcde"
+    (move-to-column 4) ;; on 'e' in first "abcde"
+    (let ((last-command nil))
+      (evm-add-cursor-down)
+      (setq last-command 'evm-add-cursor-down)
+      (evm-add-cursor-down)
+      (setq last-command 'evm-add-cursor-down)
+      (evm-add-cursor-down))
+    (should (= (evm-region-count) 4))
+    ;; Check columns: should all be 4 except the short line
+    (let ((cols (mapcar (lambda (r)
+                          (save-excursion
+                            (goto-char (marker-position (evm-region-beg r)))
+                            (current-column)))
+                        (evm-state-regions evm--state))))
+      ;; Line 1: col 4, line 2: col 2 (short), line 3: col 4, line 4: col 4
+      (should (equal cols '(4 2 4 4))))))
+
+(ert-deftest evm-test-cursor-down-then-up-no-duplicates ()
+  "C-Down then C-Up should not create duplicate cursors."
+  (evm-test-with-buffer "line1\nline2\nline3\nline4\nline5"
+    (let ((last-command nil))
+      (evm-add-cursor-down)
+      (setq last-command 'evm-add-cursor-down)
+      (evm-add-cursor-down)
+      (setq last-command 'evm-add-cursor-down)
+      (evm-add-cursor-down))
+    (should (= (evm-region-count) 4))
+    ;; Now C-Up 3 times — should move leader, not create duplicates
+    (let ((last-command 'evm-add-cursor-up))
+      (evm-add-cursor-up)
+      (setq last-command 'evm-add-cursor-up)
+      (evm-add-cursor-up)
+      (setq last-command 'evm-add-cursor-up)
+      (evm-add-cursor-up))
+    (should (= (evm-region-count) 4))))
+
 ;;; Navigation tests
 
 (ert-deftest evm-test-find-next ()
@@ -465,6 +504,25 @@
     (evm-previous-line)
     (should (= (current-column) 5))))
 
+(ert-deftest evm-test-j-short-line-clamps-to-last-char ()
+  "j to a short line should clamp cursor to last char, not past EOL."
+  (evm-test-with-buffer "long_line = 100\ngap\nlong_line = 300"
+    ;; Start at column 7 on line 1 (on "e" of "line")
+    (goto-char (point-min))
+    (forward-char 7)
+    (evm-activate)
+    (evm--create-region (point) (point))
+    ;; j - go to "gap" line. Column 7 is past EOL.
+    ;; Should clamp to last char "p" (col 2), not to newline (col 3).
+    (evm-next-line)
+    (let ((col (current-column))
+          (ch (char-after (point))))
+      (should (= col 2))           ;; on 'p', last char of "gap"
+      (should (not (= ch ?\n))))   ;; NOT on newline
+    ;; j again - should restore to column 7 on long line
+    (evm-next-line)
+    (should (= (current-column) 7))))
+
 (ert-deftest evm-test-horizontal-movement-clears-vcol ()
   "Horizontal movement should clear vcol."
   (evm-test-with-buffer "abcdefghij\n\nabcdefghij"
@@ -556,6 +614,103 @@
     ;; - Line 2: 32 (point-max, since no trailing newline)
     ;; Visual cursor will be on 8 ('t') and 31 ('e') respectively
     (should (equal (evm-test-end-positions) '(9 32)))))
+
+(ert-deftest evm-test-extend-mode-forward-word-end ()
+  "e in extend mode should include the full word in selection."
+  (evm-test-with-buffer "alpha beta\nalpha beta"
+    (evm-find-word) ; "alpha" selected
+    (evm-find-next)
+    (should (= (evm-region-count) 2))
+    ;; Tab to cursor, Tab to extend (1-char)
+    (evm-toggle-mode)
+    (evm-toggle-mode)
+    ;; e should select full word
+    (evm-forward-word-end)
+    (let ((selections (mapcar (lambda (r)
+                                (buffer-substring-no-properties
+                                 (marker-position (evm-region-beg r))
+                                 (marker-position (evm-region-end r))))
+                              (evm-state-regions evm--state))))
+      (should (equal selections '("alpha" "alpha"))))))
+
+(ert-deftest evm-test-extend-mode-yank-full-word ()
+  "Yank in extend mode after e should capture the full word."
+  (evm-test-with-buffer "foo bar\nfoo baz"
+    ;; Create vertical cursors, toggle to extend, grow, yank
+    (evm-add-cursor-down)
+    (evm-toggle-mode)
+    (evm-forward-word-end)
+    (evm-yank)
+    (let ((reg (gethash ?\" (evm-state-registers evm--state))))
+      (should (equal reg '("foo" "foo"))))))
+
+(ert-deftest evm-test-extend-mode-shrink-with-h ()
+  "h in extend mode should shrink selection by one char."
+  (evm-test-with-buffer "hello abc\nhello xyz"
+    (evm-find-word)  ; "hello" at pos 1
+    (evm-find-next)  ; "hello" at pos 11
+    (should (= (evm-region-count) 2))
+    ;; Selections are both "hello" (5 chars each)
+    ;; Press h to shrink
+    (evm-backward-char)
+    (let ((selections (mapcar (lambda (r)
+                                (buffer-substring-no-properties
+                                 (marker-position (evm-region-beg r))
+                                 (marker-position (evm-region-end r))))
+                              (evm-state-regions evm--state))))
+      (should (equal selections '("hell" "hell"))))))
+
+(ert-deftest evm-test-extend-mode-flip-then-grow ()
+  "o should flip direction, then h should grow selection backward."
+  (evm-test-with-buffer "my tag = X\nmy tag = Y"
+    (goto-char 4)  ; on "tag"
+    (evm-find-word)
+    (evm-find-next)
+    (should (= (evm-region-count) 2))
+    ;; Initial: "tag" selected [4,7) and [15,18)
+    ;; Grow right by 1 (l) → "tag " [4,8) and [15,19)
+    (evm-forward-char)
+    ;; Flip direction: cursor moves to left end, anchor to right end
+    (evm-flip-direction)
+    ;; Grow left by 1 (h) → " tag " [3,8) and [14,19)
+    (evm-backward-char)
+    (let ((sel (mapcar (lambda (r)
+                         (buffer-substring-no-properties
+                          (marker-position (evm-region-beg r))
+                          (marker-position (evm-region-end r))))
+                       (evm-state-regions evm--state))))
+      (should (equal sel '(" tag " " tag "))))))
+
+(ert-deftest evm-test-find-char-f ()
+  "f should move all cursors to the target character."
+  (evm-test-with-buffer "a = 1\na = 2\na = 3"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    ;; f= should land all cursors on "="
+    (evm--move-cursors #'evm--move-find-char ?= 1)
+    (let ((cols (mapcar (lambda (r)
+                          (save-excursion
+                            (goto-char (evm--region-cursor-pos r))
+                            (current-column)))
+                        (evm-state-regions evm--state))))
+      (should (equal cols '(2 2 2))))))
+
+(ert-deftest evm-test-find-char-F-backward ()
+  "F should move all cursors backward to the target character."
+  (evm-test-with-buffer "x = 1\nx = 2\nx = 3"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    ;; Move to end of line first
+    (evm--move-cursors #'evm--move-line-end)
+    ;; F= should land on "="
+    (evm--move-cursors #'evm--move-find-char-backward ?= 1)
+    (let ((cols (mapcar (lambda (r)
+                          (save-excursion
+                            (goto-char (evm--region-cursor-pos r))
+                            (current-column)))
+                        (evm-state-regions evm--state))))
+      (should (equal cols '(2 2 2))))))
 
 ;;; Insert mode tests
 
@@ -823,6 +978,7 @@
     ;; Start from position 9
     (evm--remove-all-overlays)
     (setf (evm-state-regions evm--state) nil)
+    (clrhash (evm-state-region-by-id evm--state))
     (goto-char 9)
     (evm--create-region 9 12 (car (evm-state-patterns evm--state)))
     ;; find-next should find foo at 17

@@ -59,7 +59,7 @@
   :group 'evm)
 
 (defface evm-mode-line-face
-  '((t :foreground "#10B981" :weight bold))
+  '((t nil))
   "Face for evm indicator in mode-line."
   :group 'evm)
 
@@ -102,6 +102,7 @@ In extend mode: beg <= end, anchor is fixed."
   active-p        ; is evm active in buffer
   mode            ; 'cursor or 'extend
   regions         ; list of evm-region, sorted by position
+  region-by-id    ; hash-table: id -> evm-region for O(1) lookup
   leader-id       ; ID of current leader
   id-counter      ; counter for ID generation
   patterns        ; list of search patterns (strings)
@@ -112,7 +113,6 @@ In extend mode: beg <= end, anchor is fixed."
   undo-snapshots  ; list of snapshots for undo
   last-regions    ; saved positions for reselect
   registers       ; hash-table: char -> list of strings
-  column-positions ; hash-table for column caching
   restrict-beg    ; start of restricted region (marker or nil)
   restrict-end    ; end of restricted region (marker or nil)
   restrict-overlay) ; overlay for restricted region visualization
@@ -174,6 +174,8 @@ Returns the created region."
                   :vcol nil
                   :txt (buffer-substring-no-properties beg end)
                   :pattern pattern)))
+    ;; Add to hash-table for O(1) lookup
+    (puthash id region (evm-state-region-by-id evm--state))
     ;; Insert into sorted list (more efficient than push + sort)
     (evm--insert-region-sorted region)
     ;; Update indices
@@ -195,6 +197,8 @@ Returns the created region."
   (set-marker (evm-region-beg region) nil)
   (set-marker (evm-region-end region) nil)
   (set-marker (evm-region-anchor region) nil)
+  ;; Remove from hash-table
+  (remhash (evm-region-id region) (evm-state-region-by-id evm--state))
   ;; Remove from list
   (setf (evm-state-regions evm--state)
         (cl-remove-if (lambda (r) (= (evm-region-id r) (evm-region-id region)))
@@ -241,7 +245,8 @@ POSITIONS-LIST is a list of (BEG . END) cons cells.
 PATTERN is the optional search pattern for all regions.
 This is more efficient than calling evm--create-region in a loop
 because it sorts once and creates overlays in batch."
-  (let ((new-regions '()))
+  (let ((new-regions '())
+        (ht (evm-state-region-by-id evm--state)))
     ;; Create all regions without sorting or overlays
     (dolist (pos positions-list)
       (let* ((beg (car pos))
@@ -256,6 +261,8 @@ because it sorts once and creates overlays in batch."
                       :vcol nil
                       :txt (buffer-substring-no-properties beg end)
                       :pattern pattern)))
+        ;; Add to hash-table for O(1) lookup
+        (puthash id region ht)
         (push region new-regions)))
     ;; Add all new regions to list
     (setf (evm-state-regions evm--state)
@@ -289,9 +296,8 @@ because it sorts once and creates overlays in batch."
   (length (evm-get-all-regions)))
 
 (defun evm--get-region-by-id (id)
-  "Find region by ID."
-  (cl-find-if (lambda (r) (= (evm-region-id r) id))
-              (evm-state-regions evm--state)))
+  "Find region by ID.  O(1) lookup using hash-table."
+  (gethash id (evm-state-region-by-id evm--state)))
 
 (defun evm--leader-region ()
   "Get the leader region."
@@ -434,9 +440,13 @@ Attempts to reuse existing overlays when possible for better performance."
             (delete-overlay region-ov)
             (setf (evm-region-overlay region) nil))
           ;; Update or create cursor overlay
-          (unless (and (boundp 'evm--insert-active)
-                       evm--insert-active
-                       is-leader)
+          (if (and (boundp 'evm--insert-active)
+                   evm--insert-active
+                   is-leader)
+              ;; In insert mode, hide leader cursor (evil shows its own cursor)
+              (when (and cursor-ov (overlay-buffer cursor-ov))
+                (delete-overlay cursor-ov)
+                (setf (evm-region-cursor-overlay region) nil))
             (let* ((pos (marker-position (evm-region-beg region)))
                    (at-eol (save-excursion
                              (goto-char pos)
@@ -600,39 +610,75 @@ Like vim-visual-multi: when direction is forward, cursor goes to beginning."
   "Move all cursors using MOTION-FN with ARGS.
 MOTION-FN should move point and return new position.
 This clears vcol for all regions (horizontal movement)."
-  (let ((positions '()))
+  (let ((positions '())
+        (extend-p (evm-extend-mode-p)))
     ;; Calculate new positions
     (dolist (region (evm-state-regions evm--state))
       ;; Clear vcol on horizontal movement
       (setf (evm-region-vcol region) nil)
       (save-excursion
-        (goto-char (evm--region-cursor-pos region))
+        ;; In extend mode, start from visual cursor pos (ON the character),
+        ;; not from the exclusive end marker
+        (goto-char (if extend-p
+                       (evm--region-visual-cursor-pos region)
+                     (evm--region-cursor-pos region)))
         (apply motion-fn args)
         (push (cons region (point)) positions)))
-    ;; Apply new positions (in reverse to not affect markers)
+    ;; Apply new positions
     (dolist (pos-pair (nreverse positions))
-      (evm--region-set-cursor-pos (car pos-pair) (cdr pos-pair))))
+      (if extend-p
+          ;; In extend mode, motion returns inclusive position (char cursor is ON).
+          ;; Convert to exclusive end for region storage.
+          (let* ((region (car pos-pair))
+                 (new-pos (cdr pos-pair))
+                 (anchor-pos (marker-position (evm-region-anchor region))))
+            (cond
+             ((< new-pos anchor-pos)
+              (set-marker (evm-region-beg region) new-pos)
+              (set-marker (evm-region-end region) (1+ anchor-pos))
+              (setf (evm-region-dir region) 0))
+             (t
+              (set-marker (evm-region-beg region) anchor-pos)
+              (set-marker (evm-region-end region) (1+ new-pos))
+              (setf (evm-region-dir region) 1))))
+        (evm--region-set-cursor-pos (car pos-pair) (cdr pos-pair)))))
   ;; Move real point to leader position
   (when-let ((leader (evm--leader-region)))
-    (goto-char (evm--region-cursor-pos leader)))
+    (goto-char (evm--region-visual-cursor-pos leader)))
   (evm--update-all-overlays))
 
 (defun evm--move-cursors-vertically (count)
   "Move all cursors COUNT lines vertically, preserving each cursor's column.
 Uses vcol to remember the desired column across short lines."
-  (let ((positions '()))
+  (let ((positions '())
+        (extend-p (evm-extend-mode-p)))
     ;; Calculate new positions using each region's vcol
     (dolist (region (evm-state-regions evm--state))
       (save-excursion
-        (goto-char (evm--region-cursor-pos region))
+        (goto-char (if extend-p
+                       (evm--region-visual-cursor-pos region)
+                     (evm--region-cursor-pos region)))
         (evm--move-line-for-region region count)
         (push (cons region (point)) positions)))
-    ;; Apply new positions (in reverse to not affect markers)
+    ;; Apply new positions
     (dolist (pos-pair (nreverse positions))
-      (evm--region-set-cursor-pos (car pos-pair) (cdr pos-pair))))
+      (if extend-p
+          (let* ((region (car pos-pair))
+                 (new-pos (cdr pos-pair))
+                 (anchor-pos (marker-position (evm-region-anchor region))))
+            (cond
+             ((< new-pos anchor-pos)
+              (set-marker (evm-region-beg region) new-pos)
+              (set-marker (evm-region-end region) (1+ anchor-pos))
+              (setf (evm-region-dir region) 0))
+             (t
+              (set-marker (evm-region-beg region) anchor-pos)
+              (set-marker (evm-region-end region) (1+ new-pos))
+              (setf (evm-region-dir region) 1))))
+        (evm--region-set-cursor-pos (car pos-pair) (cdr pos-pair)))))
   ;; Move real point to leader position
   (when-let ((leader (evm--leader-region)))
-    (goto-char (evm--region-cursor-pos leader)))
+    (goto-char (evm--region-visual-cursor-pos leader)))
   (evm--update-all-overlays))
 
 (defun evm--move-char (count)
@@ -648,7 +694,12 @@ This function is called with point already at the region's cursor position."
     (setf (evm-region-vcol region) (current-column)))
   (let ((col (evm-region-vcol region)))
     (forward-line count)
-    (move-to-column col)))
+    (move-to-column col)
+    ;; In cursor mode, clamp to last character like evil does
+    ;; (vcol is preserved separately for column memory)
+    (when (and (not (evm-extend-mode-p))
+               (eolp) (not (bolp)))
+      (backward-char 1))))
 
 (defun evm--move-word (count)
   "Move forward COUNT words."
@@ -667,22 +718,70 @@ This function is called with point already at the region's cursor position."
   (beginning-of-line))
 
 (defun evm--move-line-end ()
-  "Move to end of line.
-In cursor mode: go to last character (like evil $).
-In extend mode: go to eol so visual cursor lands on last char."
+  "Move to end of line (last character, like evil $)."
   (let ((eol (line-end-position))
         (bol (line-beginning-position)))
     (if (= bol eol)
         ;; Empty line - stay at beginning
         (goto-char bol)
-      ;; In extend mode, end marker is exclusive, so go to eol
-      ;; to have visual cursor on (1- eol) = last char.
-      ;; In cursor mode, go directly to last char.
-      (goto-char (if (evm-extend-mode-p) eol (1- eol))))))
+      (goto-char (1- eol)))))
 
 (defun evm--move-first-non-blank ()
   "Move to first non-blank character."
   (back-to-indentation))
+
+(defun evm--move-find-char (char count)
+  "Move to COUNT-th occurrence of CHAR on current line (like evil f).
+Cursor lands ON the character."
+  (let ((case-fold-search nil)
+        (target (char-to-string char))
+        (start (point)))
+    (forward-char 1)  ; skip current position
+    (let ((found nil))
+      (dotimes (_ count)
+        (setq found (search-forward target (line-end-position) t)))
+      (if found
+          (backward-char 1)  ; search-forward lands after match, go back to ON char
+        (goto-char start)))))
+
+(defun evm--move-find-char-to (char count)
+  "Move to one before COUNT-th occurrence of CHAR (like evil t).
+Cursor lands one position before the character."
+  (let ((case-fold-search nil)
+        (target (char-to-string char))
+        (start (point)))
+    (forward-char 1)  ; skip current position
+    (let ((found nil))
+      (dotimes (_ count)
+        (setq found (search-forward target (line-end-position) t)))
+      (if found
+          (backward-char 2)  ; land one before the match
+        (goto-char start)))))
+
+(defun evm--move-find-char-backward (char count)
+  "Move backward to COUNT-th occurrence of CHAR (like evil F).
+Cursor lands ON the character."
+  (let ((case-fold-search nil)
+        (target (char-to-string char))
+        (start (point)))
+    (let ((found nil))
+      (dotimes (_ count)
+        (setq found (search-backward target (line-beginning-position) t)))
+      (unless found
+        (goto-char start)))))
+
+(defun evm--move-find-char-to-backward (char count)
+  "Move to one after COUNT-th occurrence of CHAR backward (like evil T).
+Cursor lands one position after the character."
+  (let ((case-fold-search nil)
+        (target (char-to-string char))
+        (start (point)))
+    (let ((found nil))
+      (dotimes (_ count)
+        (setq found (search-backward target (line-beginning-position) t)))
+      (if found
+          (forward-char 1)  ; land one after the match
+        (goto-char start)))))
 
 ;;; Undo support
 
@@ -711,16 +810,19 @@ In extend mode: go to eol so visual cursor lands on last char."
     (set-marker (evm-region-end region) nil)
     (set-marker (evm-region-anchor region) nil))
   (setf (evm-state-regions evm--state) nil)
+  (clrhash (evm-state-region-by-id evm--state))
   ;; Restore from snapshot
-  (dolist (data (evm-snapshot-regions-data snapshot))
-    (cl-destructuring-bind (id beg end anchor dir) data
-      (let ((region (make-evm-region
-                     :id id
-                     :beg (evm--make-marker beg)
-                     :end (evm--make-marker end)
-                     :anchor (evm--make-marker anchor)
-                     :dir dir)))
-        (push region (evm-state-regions evm--state)))))
+  (let ((ht (evm-state-region-by-id evm--state)))
+    (dolist (data (evm-snapshot-regions-data snapshot))
+      (cl-destructuring-bind (id beg end anchor dir) data
+        (let ((region (make-evm-region
+                       :id id
+                       :beg (evm--make-marker beg)
+                       :end (evm--make-marker end)
+                       :anchor (evm--make-marker anchor)
+                       :dir dir)))
+          (puthash id region ht)
+          (push region (evm-state-regions evm--state))))))
   (setf (evm-state-leader-id evm--state) (evm-snapshot-leader-id snapshot))
   (setf (evm-state-mode evm--state) (evm-snapshot-mode snapshot))
   (evm--sort-regions)
@@ -765,9 +867,12 @@ In extend mode: go to eol so visual cursor lands on last char."
 
 ;;; Mode-line
 
+(defvar evm-show-mode-line)  ; defined in evm.el
+
 (defun evm--mode-line-indicator ()
   "Return mode-line indicator string."
-  (when (evm-active-p)
+  (when (and (bound-and-true-p evm-show-mode-line)
+             (evm-active-p))
     (let* ((mode (evm-state-mode evm--state))
            (count (evm-region-count))
            (leader-idx (1+ (or (evm--leader-index) 0)))
@@ -793,36 +898,42 @@ In extend mode: go to eol so visual cursor lands on last char."
     (and (< b1 e2) (< b2 e1))))
 
 (defun evm--check-and-merge-overlapping ()
-  "Check for overlapping regions and merge them."
+  "Check for overlapping regions and merge them.
+Uses O(n) algorithm: sort first, then single-pass merge of adjacent regions."
   (let ((regions (evm-state-regions evm--state))
-        (merged nil))
-    (while regions
-      (let ((current (car regions))
-            (rest (cdr regions)))
-        (setq regions rest)
-        ;; Check if current overlaps with any in merged
-        (let ((overlapping (cl-find-if (lambda (r) (evm--regions-overlap-p current r))
-                                       merged)))
-          (if overlapping
-              ;; Merge: extend overlapping region
-              (let ((new-beg (min (marker-position (evm-region-beg current))
-                                  (marker-position (evm-region-beg overlapping))))
-                    (new-end (max (marker-position (evm-region-end current))
-                                  (marker-position (evm-region-end overlapping)))))
-                (set-marker (evm-region-beg overlapping) new-beg)
-                (set-marker (evm-region-end overlapping) new-end)
-                ;; Clean up current
-                (when (evm-region-overlay current)
-                  (delete-overlay (evm-region-overlay current)))
-                (when (evm-region-cursor-overlay current)
-                  (delete-overlay (evm-region-cursor-overlay current)))
-                (set-marker (evm-region-beg current) nil)
-                (set-marker (evm-region-end current) nil)
-                (set-marker (evm-region-anchor current) nil))
-            ;; No overlap, add to merged
-            (push current merged)))))
-    (setf (evm-state-regions evm--state) (nreverse merged))
-    (evm--sort-regions)
+        (ht (evm-state-region-by-id evm--state)))
+    (when (>= (length regions) 2)
+      ;; Sort by beg position for single-pass merge
+      (setq regions (sort regions
+                          (lambda (a b)
+                            (< (marker-position (evm-region-beg a))
+                               (marker-position (evm-region-beg b))))))
+      (let ((result nil)
+            (current (car regions)))
+        ;; Single pass: merge adjacent overlapping regions
+        (dolist (next (cdr regions))
+          (let ((cur-end (marker-position (evm-region-end current)))
+                (next-beg (marker-position (evm-region-beg next))))
+            (if (<= next-beg cur-end)
+                ;; Overlap: extend current, delete next
+                (progn
+                  (set-marker (evm-region-end current)
+                              (max cur-end (marker-position (evm-region-end next))))
+                  ;; Clean up next region
+                  (remhash (evm-region-id next) ht)
+                  (when (evm-region-overlay next)
+                    (delete-overlay (evm-region-overlay next)))
+                  (when (evm-region-cursor-overlay next)
+                    (delete-overlay (evm-region-cursor-overlay next)))
+                  (set-marker (evm-region-beg next) nil)
+                  (set-marker (evm-region-end next) nil)
+                  (set-marker (evm-region-anchor next) nil))
+              ;; No overlap: finalize current, start new
+              (push current result)
+              (setq current next))))
+        ;; Don't forget the last current
+        (push current result)
+        (setf (evm-state-regions evm--state) (nreverse result))))
     (evm--update-region-indices)))
 
 ;;; Restrict to region
