@@ -336,80 +336,185 @@ Use this for buffer modifications to avoid position shifts affecting earlier reg
   "Non-nil when we are replicating changes to other cursors.
 Used to prevent infinite recursion.")
 
-(defvar-local evm--insert-last-point nil
-  "Last known point position during insert mode.")
+(defvar-local evm--insert-start-markers nil
+  "Alist of (region-id . marker) recording where each cursor was when insert began.
+Markers have nil insertion type so they stay at the insert-start position.")
+
+(defvar-local evm--insert-orig-positions nil
+  "Alist of (region-id . integer) recording the original position of each cursor
+when insert mode began.  Unlike `evm--insert-start-markers' (which adjust
+when text is deleted before them), these stay fixed and allow detecting
+backward deletions (backspace past the insert point).")
+
+(defvar-local evm--insert-replicated-len 0
+  "Length of text currently replicated at non-leader cursors.
+Used by `evm--insert-sync-cursors' to know how much old text to replace.")
+
+(defvar-local evm--insert-pre-start-deleted 0
+  "Number of characters deleted before the original start position.
+Tracks backward deletions (backspace) so they can be replicated.")
+
+(defvar-local evm--insert-leader-end-marker nil
+  "Marker at the end of the leader's modified region during insert mode.
+Has insertion type t so it advances when text is inserted at/before it.
+Used to capture auto-inserted text after point (e.g. closing delimiters
+from `electric-pair-mode').")
 
 (defun evm--start-insert-mode ()
   "Start tracking for evm insert mode with real-time replication."
   (when (and (evm-active-p) (not evm--insert-active))
     (setq evm--insert-active t
           evm--insert-replicating nil
-          evm--insert-last-point (point))
+          evm--insert-replicated-len 0
+          evm--insert-pre-start-deleted 0)
+    ;; Record start markers for all cursors (nil insertion type so they
+    ;; stay at the position where insert began, even as text is inserted).
+    (let ((regions (evm-state-regions evm--state)))
+      (setq evm--insert-start-markers
+            (mapcar (lambda (r)
+                      (let ((m (copy-marker (evm-region-beg r))))
+                        (set-marker-insertion-type m nil)
+                        (cons (evm-region-id r) m)))
+                    regions))
+      ;; Also record original positions as fixed integers for detecting
+      ;; backward deletions (backspace past the insert point).
+      (setq evm--insert-orig-positions
+            (mapcar (lambda (r)
+                      (cons (evm-region-id r)
+                            (marker-position (evm-region-beg r))))
+                    regions)))
+    ;; Track end of leader's modified region (t insertion type so it
+    ;; advances with text inserted at/after the leader position).
+    (let ((leader (evm--leader-region)))
+      (setq evm--insert-leader-end-marker
+            (copy-marker (evm-region-beg leader)))
+      (set-marker-insertion-type evm--insert-leader-end-marker t))
     ;; Disable evm keymaps during insert mode (let evil handle input)
     (setq evm--emulation-alist nil)
     (when-let ((entry (assq 'evm-mode minor-mode-map-alist)))
       (setcdr entry nil))
-    ;; Add hooks for real-time replication
-    (add-hook 'after-change-functions #'evm--insert-after-change nil t)
+    ;; Use post-command-hook for replication — this runs AFTER all hooks
+    ;; (including electric-pair-mode's post-self-insert-hook) have finished,
+    ;; so the leader's buffer state is final and we can safely replicate.
+    (add-hook 'post-command-hook #'evm--insert-post-command nil t)
     (add-hook 'evil-insert-state-exit-hook #'evm--stop-insert-mode nil t)
     ;; Update overlays to ensure they're positioned correctly for insert mode
     (evm--update-all-overlays)))
 
-(defun evm--insert-after-change (beg end old-len)
-  "Replicate changes at leader to all other cursors in real-time.
-BEG and END are the changed region, OLD-LEN is length of replaced text."
+(defun evm--insert-sync-cursors ()
+  "Sync non-leader cursors with leader's insert text.
+Computes the leader's full modified text — including auto-inserted text
+after point (electric-pair-mode) and backward deletions (backspace) —
+then replaces the corresponding region at each non-leader cursor."
+  (let* ((leader (evm--leader-region))
+         (leader-start-entry (assq (evm-region-id leader)
+                                   evm--insert-start-markers))
+         (leader-start (when leader-start-entry
+                         (marker-position (cdr leader-start-entry))))
+         (leader-orig-entry (assq (evm-region-id leader)
+                                  evm--insert-orig-positions))
+         (leader-orig (when leader-orig-entry (cdr leader-orig-entry))))
+    (when (and leader-start leader-orig)
+      ;; How many chars were deleted before the original start position
+      ;; (e.g. backspace).  The start marker (nil insertion type) shifts
+      ;; backward when text before it is deleted.
+      (let* ((pre-del (max 0 (- leader-orig leader-start)))
+             ;; End of leader's modified region (captures auto-pairs)
+             (leader-end (if evm--insert-leader-end-marker
+                             (max (point)
+                                  (marker-position evm--insert-leader-end-marker))
+                           (point)))
+             ;; Full text from (possibly shifted) start to end
+             (leader-text (buffer-substring-no-properties
+                           leader-start leader-end))
+             ;; Point offset within the leader text
+             (leader-point-off (- (point) leader-start))
+             (evm--insert-replicating t)
+             (inhibit-modification-hooks t)
+             (other-regions (cl-remove-if #'evm--leader-p
+                                          (evm-state-regions evm--state)))
+             ;; Sort bottom-to-top so buffer modifications don't shift
+             ;; positions of regions we haven't processed yet.
+             (sorted (cl-sort (copy-sequence other-regions) #'>
+                              :key (lambda (r)
+                                     (let ((e (assq (evm-region-id r)
+                                                    evm--insert-start-markers)))
+                                       (if e (marker-position (cdr e)) 0))))))
+        (dolist (region sorted)
+          (let* ((start-entry (assq (evm-region-id region)
+                                    evm--insert-start-markers))
+                 (start-pos (when start-entry
+                              (marker-position (cdr start-entry)))))
+            (when start-pos
+              (save-excursion
+                ;; Compute the region to replace:
+                ;; from (start - pre-del - previous-pre-del) to (start + prev-replicated)
+                ;; But start marker already adjusted for previous pre-del,
+                ;; so: from (start - new-backward-delta) to (start + prev-replicated)
+                (let* ((del-start (max (point-min)
+                                       (- start-pos
+                                          (max 0 (- pre-del evm--insert-pre-start-deleted)))))
+                       (del-end (min (point-max)
+                                    (+ start-pos evm--insert-replicated-len))))
+                  (delete-region del-start del-end)
+                  ;; Insert leader text
+                  (goto-char del-start)
+                  (insert leader-text)
+                  ;; Update cursor markers
+                  (let ((new-pos (+ del-start leader-point-off)))
+                    (set-marker (evm-region-beg region) new-pos)
+                    (set-marker (evm-region-end region) new-pos)
+                    (set-marker (evm-region-anchor region) new-pos)))))))
+        ;; Update tracking state
+        (setq evm--insert-replicated-len (length leader-text)
+              evm--insert-pre-start-deleted 0)
+        ;; Reset orig positions to current marker positions so that
+        ;; the next sync only sees NEW changes (the shifts from this
+        ;; sync's buffer modifications are absorbed).
+        (setq evm--insert-orig-positions
+              (mapcar (lambda (entry)
+                        (let ((m (assq (car entry) evm--insert-start-markers)))
+                          (cons (car entry)
+                                (if m (marker-position (cdr m)) (cdr entry)))))
+                      evm--insert-orig-positions))
+        ;; Update leader markers
+        (set-marker (evm-region-beg leader) (point))
+        (set-marker (evm-region-end leader) (point))
+        (set-marker (evm-region-anchor leader) (point))
+        ;; Update overlays
+        (evm--update-all-overlays)))))
+
+(defun evm--insert-post-command ()
+  "Replicate leader's insert text to all other cursors after each command.
+Runs in `post-command-hook', after all other hooks (including
+`electric-pair-mode') have finished modifying the buffer."
   (when (and evm--insert-active
              (not evm--insert-replicating)
-             (evm-active-p))
-    (let* ((leader (evm--leader-region))
-           (leader-pos (when leader (marker-position (evm-region-beg leader))))
-           (new-len (- end beg))
-           (delta (- new-len old-len)))
-      ;; Only replicate if the change is near the leader cursor
-      (when (and leader-pos
-                 ;; Change must be at or before current leader position
-                 (<= beg (+ leader-pos (max 0 (- old-len)))))
-        (let ((evm--insert-replicating t)
-              (inhibit-modification-hooks t))
-          ;; Get the inserted/changed text (or nil for pure deletion)
-          (let ((new-text (when (> new-len 0)
-                            (buffer-substring-no-properties beg end)))
-                (other-regions (cl-remove-if #'evm--leader-p
-                                             (evm-state-regions evm--state))))
-            ;; Apply to other regions from end to beginning
-            (dolist (region (cl-sort (copy-sequence other-regions) #'>
-                                     :key (lambda (r) (marker-position (evm-region-beg r)))))
-              (let ((region-pos (marker-position (evm-region-beg region))))
-                (save-excursion
-                  (goto-char region-pos)
-                  ;; Delete old text if any
-                  (when (> old-len 0)
-                    (delete-char (- (min old-len (- (point-max) (point))))))
-                  ;; Insert new text if any
-                  (when new-text
-                    (insert new-text))
-                  ;; Update marker to current position
-                  (set-marker (evm-region-beg region) (point))
-                  (set-marker (evm-region-end region) (point))
-                  (set-marker (evm-region-anchor region) (point))))))
-          ;; Update leader marker position too
-          (set-marker (evm-region-beg leader) (point))
-          (set-marker (evm-region-end leader) (point))
-          (set-marker (evm-region-anchor leader) (point))
-          ;; Update overlays to show new positions
-          (evm--update-all-overlays))
-        ;; Update last point
-        (setq evm--insert-last-point (point))))))
+             (evm-active-p)
+             evm--insert-start-markers)
+    (evm--insert-sync-cursors)))
 
 (defun evm--stop-insert-mode ()
   "Handle exit from evm insert mode."
   (when (and evm--insert-active (evm-active-p))
+    ;; Final sync — ensures replication even when text was inserted
+    ;; outside the command loop (e.g. `(insert ...)' in tests).
+    (evm--insert-sync-cursors)
     ;; Remove hooks
-    (remove-hook 'after-change-functions #'evm--insert-after-change t)
+    (remove-hook 'post-command-hook #'evm--insert-post-command t)
     (remove-hook 'evil-insert-state-exit-hook #'evm--stop-insert-mode t)
+    ;; Clean up markers
+    (dolist (entry evm--insert-start-markers)
+      (set-marker (cdr entry) nil))
+    (when evm--insert-leader-end-marker
+      (set-marker evm--insert-leader-end-marker nil))
     (setq evm--insert-active nil
           evm--insert-replicating nil
-          evm--insert-last-point nil)
+          evm--insert-start-markers nil
+          evm--insert-orig-positions nil
+          evm--insert-replicated-len 0
+          evm--insert-pre-start-deleted 0
+          evm--insert-leader-end-marker nil)
     ;; Add one-shot hook to sync after evil adjusts point in normal state
     (add-hook 'evil-normal-state-entry-hook #'evm--sync-after-insert-exit nil t)
     ;; Restore evm keymaps

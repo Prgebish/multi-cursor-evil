@@ -829,6 +829,73 @@
     (evil-normal-state)
     (should (string= (buffer-string) "above\nline1\nabove\nline2\nabove\nline3"))))
 
+;;; Electric-pair-mode integration
+
+(defun evm-test--simulate-keystrokes (str)
+  "Simulate typing STR character by character with proper hook execution."
+  (dolist (ch (string-to-list str))
+    (let ((last-command-event ch)
+          (this-command 'self-insert-command)
+          (current-prefix-arg nil))
+      (run-hooks 'pre-command-hook)
+      (call-interactively #'self-insert-command)
+      (run-hooks 'post-command-hook))))
+
+(ert-deftest evm-test-open-below-real-keys ()
+  "o + real keystrokes should replicate to all cursors."
+  (evm-test-with-buffer "a = 1\nb = 2\nc = 3"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    (evm-open-below)
+    (evm-test--simulate-keystrokes "print(done)")
+    (evil-normal-state)
+    (should (string= (buffer-string)
+                     "a = 1\nprint(done)\nb = 2\nprint(done)\nc = 3\nprint(done)"))))
+
+(ert-deftest evm-test-open-below-electric-pair ()
+  "o + real keystrokes with electric-pair-mode should replicate correctly."
+  (evm-test-with-buffer "a = 1\nb = 2\nc = 3"
+    (electric-pair-local-mode 1)
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    (evm-open-below)
+    (evm-test--simulate-keystrokes "print(done)")
+    (evil-normal-state)
+    (should (string= (buffer-string)
+                     "a = 1\nprint(done)\nb = 2\nprint(done)\nc = 3\nprint(done)"))))
+
+(ert-deftest evm-test-insert-electric-pair ()
+  "i + real keystrokes with electric-pair-mode should replicate correctly."
+  (evm-test-with-buffer "foo\nbar\nbaz"
+    (electric-pair-local-mode 1)
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    (evm-insert)
+    (evm-test--simulate-keystrokes "(x)")
+    (evil-normal-state)
+    (should (string= (buffer-string) "(x)foo\n(x)bar\n(x)baz"))))
+
+(ert-deftest evm-test-backspace-replicates ()
+  "Backspace in insert mode should delete at all cursors."
+  (evm-test-with-buffer "colllor: red\ncolllor: green\ncolllor: blue"
+    (move-to-column 3)
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (evm-insert)
+    ;; Simulate backspace
+    (let ((last-command-event 127)
+          (this-command 'delete-backward-char)
+          (current-prefix-arg nil))
+      (run-hooks 'pre-command-hook)
+      (delete-backward-char 1)
+      (run-hooks 'post-command-hook))
+    (evil-normal-state)
+    (should (string= (buffer-string)
+                     "collor: red\ncollor: green\ncollor: blue"))))
+
 ;;; Edge cases
 
 (ert-deftest evm-test-no-word-at-point ()
