@@ -1955,6 +1955,70 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
       (should (= (length (evm-snapshot-regions-data snapshot)) 2))
       (should (eq (evm-snapshot-mode snapshot) 'extend)))))
 
+;;; Extend mode text objects
+
+(ert-deftest evm-test-extend-inner-word ()
+  "iw in extend mode should select inner word at all cursors."
+  (evm-test-with-buffer "foo bar\nbaz qux\nhello world"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (evm-enter-extend)
+    ;; iw
+    (setq unread-command-events (list ?w))
+    (evm-extend-inner-text-object)
+    (should (evm-extend-mode-p))
+    (let ((texts (mapcar (lambda (r)
+                           (buffer-substring (marker-position (evm-region-beg r))
+                                             (marker-position (evm-region-end r))))
+                         (evm-state-regions evm--state))))
+      (should (equal texts '("foo" "baz" "hello"))))))
+
+(ert-deftest evm-test-extend-a-word ()
+  "aw in extend mode should select a word (with trailing space)."
+  (evm-test-with-buffer "foo bar\nbaz qux"
+    (evm-add-cursor-down)
+    (evm-enter-extend)
+    (setq unread-command-events (list ?w))
+    (evm-extend-a-text-object)
+    (let ((texts (mapcar (lambda (r)
+                           (buffer-substring (marker-position (evm-region-beg r))
+                                             (marker-position (evm-region-end r))))
+                         (evm-state-regions evm--state))))
+      (should (equal texts '("foo " "baz "))))))
+
+(ert-deftest evm-test-extend-inner-double-quote ()
+  "i\" in extend mode should select inside quotes."
+  (evm-test-with-buffer "x = \"hello\"\ny = \"world\""
+    (goto-char 6) ;; inside "hello"
+    (evm-add-cursor-down)
+    (evm-enter-extend)
+    (setq unread-command-events (list ?\"))
+    (evm-extend-inner-text-object)
+    (let ((texts (mapcar (lambda (r)
+                           (buffer-substring (marker-position (evm-region-beg r))
+                                             (marker-position (evm-region-end r))))
+                         (evm-state-regions evm--state))))
+      (should (equal texts '("hello" "world"))))))
+
+(ert-deftest evm-test-extend-inner-paren ()
+  "i) in extend mode should select inside parens."
+  (evm-test-with-buffer "f(10)\ng(20)"
+    (goto-char 3) ;; inside (10)
+    (evm-add-cursor-down)
+    (evm-enter-extend)
+    (setq unread-command-events (list ?\)))
+    (evm-extend-inner-text-object)
+    (let ((texts (mapcar (lambda (r)
+                           (buffer-substring (marker-position (evm-region-beg r))
+                                             (marker-position (evm-region-end r))))
+                         (evm-state-regions evm--state))))
+      (should (equal texts '("10" "20"))))))
+
+(ert-deftest evm-test-extend-text-object-keybinding ()
+  "i and a should be bound in extend mode."
+  (should (eq (lookup-key evm-extend-map (kbd "i")) 'evm-extend-inner-text-object))
+  (should (eq (lookup-key evm-extend-map (kbd "a")) 'evm-extend-a-text-object)))
+
 ;;; evil-surround integration tests (10.1)
 
 (ert-deftest evm-test-surround-available-check ()

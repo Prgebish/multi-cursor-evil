@@ -186,6 +186,9 @@ it is unbound first to allow prefix bindings."
 (define-key evm-extend-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
 ;; Pass " to evil for register selection (e.g. "ay, "ap)
 (define-key evm-extend-map (kbd "\"") #'evil-use-register)
+;; Text objects in extend mode (iw, a", etc.)
+(define-key evm-extend-map (kbd "i") #'evm-extend-inner-text-object)
+(define-key evm-extend-map (kbd "a") #'evm-extend-a-text-object)
 ;; Surround (evil-surround integration)
 (define-key evm-extend-map (kbd "S") #'evm-surround)
 
@@ -1071,6 +1074,61 @@ Respects current restriction if active."
   (when (evm-cursor-mode-p)
     (evm--enter-extend-mode)
     (evm--update-keymap)))
+
+;;; Extend mode text objects
+
+(defun evm--get-text-object-bounds (inner-p obj-char)
+  "Get bounds of text object OBJ-CHAR at point.
+INNER-P selects inner vs outer variant.  Returns (BEG END) or nil."
+  (let ((bounds (pcase obj-char
+                  (?w (if inner-p (evil-inner-word) (evil-a-word)))
+                  (?W (if inner-p (evil-inner-WORD) (evil-a-WORD)))
+                  (?s (if inner-p (evil-inner-sentence) (evil-a-sentence)))
+                  (?p (if inner-p (evil-inner-paragraph) (evil-a-paragraph)))
+                  ((or ?\( ?\) ?b) (if inner-p (evil-inner-paren) (evil-a-paren)))
+                  ((or ?\[ ?\]) (if inner-p (evil-inner-bracket) (evil-a-bracket)))
+                  ((or ?{ ?} ?B) (if inner-p (evil-inner-curly) (evil-a-curly)))
+                  ((or ?< ?>) (if inner-p (evil-inner-angle) (evil-a-angle)))
+                  (?\" (if inner-p (evil-inner-double-quote) (evil-a-double-quote)))
+                  (?\' (if inner-p (evil-inner-single-quote) (evil-a-single-quote)))
+                  (?\` (if inner-p (evil-inner-back-quote) (evil-a-back-quote)))
+                  (?t (if inner-p (evil-inner-tag) (evil-a-tag)))
+                  (?o (if inner-p (evil-inner-symbol) (evil-a-symbol)))
+                  (_ nil))))
+    (when bounds
+      (list (nth 0 bounds) (nth 1 bounds)))))
+
+(defun evm--extend-text-object (inner-p)
+  "Apply text object to all regions in extend mode.
+INNER-P selects inner variant when non-nil."
+  (when (evm-extend-mode-p)
+    (let ((obj-char (read-char (if inner-p "Inner: " "A: "))))
+      (when (= obj-char 27) ; ESC
+        (cl-return-from evm--extend-text-object nil))
+      (dolist (region (evm-state-regions evm--state))
+        (save-excursion
+          (goto-char (evm--region-cursor-pos region))
+          (let ((bounds (evm--get-text-object-bounds inner-p obj-char)))
+            (when bounds
+              (let ((beg (car bounds))
+                    (end (cadr bounds)))
+                (set-marker (evm-region-beg region) beg)
+                (set-marker (evm-region-end region) end)
+                (set-marker (evm-region-anchor region) beg)
+                (setf (evm-region-dir region) 1))))))
+      (when-let ((leader (evm--leader-region)))
+        (goto-char (evm--region-visual-cursor-pos leader)))
+      (evm--update-all-overlays))))
+
+(defun evm-extend-inner-text-object ()
+  "Select inner text object at all cursors in extend mode."
+  (interactive)
+  (evm--extend-text-object t))
+
+(defun evm-extend-a-text-object ()
+  "Select outer (a) text object at all cursors in extend mode."
+  (interactive)
+  (evm--extend-text-object nil))
 
 ;;; Cursor mode editing commands
 

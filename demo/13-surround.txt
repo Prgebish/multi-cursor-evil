@@ -12,11 +12,11 @@ Requires evil-surround to be installed and loaded.
   cs     = change surround (cursor mode)
 
 Common surround characters:
-  "  '  `       — quotes
-  (  )          — parens: ( adds spaces, ) no spaces
-  [  ]          — brackets: [ adds spaces, ] no spaces
-  {  }          — braces: { adds spaces, } no spaces
-  t             — HTML tag (prompts for tag name)
+  Quotes:    double, single, backtick
+  Parens:    ( adds spaces, ) no spaces
+  Brackets:  [ adds spaces, ] no spaces
+  Braces:    { adds spaces, } no spaces
+  Tag:       t (prompts for tag name)
 
 
 Lesson 1: Surround in Extend Mode (S)
@@ -28,7 +28,7 @@ every selected region with that pair.
 > Try it: wrap the variable names in quotes.
   1. Place cursor on "name" on line 1 below, press C-n
   2. Press n twice (3 matches of "name")
-  3. Press S, then type " — all selections wrapped
+  3. Press S then double-quote — all selections wrapped
   4. Press Esc when done (u to undo)
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -86,7 +86,7 @@ surround character. The motion defines what to wrap.
 > Try it: surround each word with quotes using ysiw.
   1. Place cursor on "a" of "alpha" on line 1 below
   2. Press C-Down twice (3 cursors)
-  3. Press y, then s, then iw, then " — words wrapped
+  3. Press y, s, iw, then double-quote — words wrapped
   4. Press Esc when done (u to undo)
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -131,14 +131,14 @@ Lesson 5: Delete Surround (ds)
 ds reads a surround character and removes that pair
 around each cursor. Works in cursor mode.
 
-  ds" = delete surrounding quotes
-  ds( = delete surrounding parens
-  ds[ = delete surrounding brackets
+  ds + char — deletes the pair around point
+  e.g. ds( removes parens, ds[ removes brackets
+  Same for quotes, braces, angles, tags, etc.
 
 > Try it: remove the quotes around each value.
   1. Place cursor on "h" of "hello" on line 1 below
   2. Press C-Down twice (3 cursors inside the quotes)
-  3. Press d, then s, then " — quotes removed
+  3. Type ds then the double-quote char — quotes removed
   4. Press Esc when done (u to undo)
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -166,7 +166,7 @@ It replaces the surrounding pair at all cursors.
 > Try it: change double quotes to single quotes.
   1. Place cursor on "x" on line 1 below
   2. Press C-Down twice (3 cursors inside the quotes)
-  3. Press c, then s, then ", then ' — quotes changed
+  3. Type cs, then double-quote, then single-quote — changed
   4. Press Esc when done (u to undo)
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

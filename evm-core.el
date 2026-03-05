@@ -325,12 +325,11 @@ because it sorts once and creates overlays in batch."
 
 (defun evm--create-overlay-for-region (region)
   "Create overlay(s) for REGION based on current mode."
-  ;; In insert mode, don't create overlay for leader (evil cursor shows position)
-  (unless (and (boundp 'evm--insert-active)
-               evm--insert-active
-               (evm--leader-p region))
-    (if (evm-extend-mode-p)
-        (evm--create-region-overlay region)
+  (if (evm-extend-mode-p)
+      (evm--create-region-overlay region)
+    ;; Cursor mode: skip leader — the real Emacs cursor shows leader position.
+    ;; This avoids the overlay face overriding the cursor display in GUI Emacs.
+    (unless (evm--leader-p region)
       (evm--create-cursor-overlay region))))
 
 (defun evm--create-cursor-overlay (region)
@@ -440,10 +439,9 @@ Attempts to reuse existing overlays when possible for better performance."
             (delete-overlay region-ov)
             (setf (evm-region-overlay region) nil))
           ;; Update or create cursor overlay
-          (if (and (boundp 'evm--insert-active)
-                   evm--insert-active
-                   is-leader)
-              ;; In insert mode, hide leader cursor (evil shows its own cursor)
+          (if is-leader
+              ;; Hide leader cursor overlay — the real Emacs cursor shows leader position.
+              ;; This avoids the overlay face overriding the cursor display in GUI Emacs.
               (when (and cursor-ov (overlay-buffer cursor-ov))
                 (delete-overlay cursor-ov)
                 (setf (evm-region-cursor-overlay region) nil))
@@ -503,19 +501,10 @@ Use this during cleanup when overlays might be inconsistent."
       (delete-overlay ov))))
 
 (defun evm--update-leader-overlays ()
-  "Update overlays to reflect new leader."
-  (dolist (region (evm-state-regions evm--state))
-    (let ((is-leader (evm--leader-p region)))
-      (when-let ((ov (evm-region-cursor-overlay region)))
-        (overlay-put ov 'face
-                     (if is-leader
-                         'evm-leader-cursor-face
-                       'evm-cursor-face)))
-      (when-let ((ov (evm-region-overlay region)))
-        (overlay-put ov 'face
-                     (if is-leader
-                         'evm-leader-region-face
-                       'evm-region-face))))))
+  "Update overlays to reflect new leader.
+In cursor mode, the leader has no cursor overlay (the real Emacs cursor
+shows its position), so we must create/delete overlays when leader changes."
+  (evm--update-all-overlays))
 
 ;;; Region position helpers
 
