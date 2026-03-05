@@ -1,0 +1,171 @@
+EVM Tutorial 02: Vertical Cursors (C-Down / C-Up)
+===================================================
+
+Vertical cursors let you place cursors on consecutive lines at
+the same column. This is useful for editing columnar data, adding
+prefixes, or changing aligned values.
+
+
+Lesson 1: Add Cursor Below (C-Down)
+-------------------------------------
+
+Press C-Down to add a cursor one line below. The first press
+activates evm and creates two cursors: one at your position
+and one on the line below at the same column. Each additional
+C-Down adds another cursor further down.
+
+> Try it: place cursor on the "a" of "alpha" (line 1) and press
+  C-Down four times. You should have 5 cursors in a vertical column.
+  Press Esc when done.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha
+  bravo
+  charlie
+  delta
+  echo
+  foxtrot
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 2: Add Cursor Above (C-Up)
+-----------------------------------
+
+C-Up works the same way but adds cursors upward.
+
+> Try it: place cursor on the "e" of "echo" (line 5) and press
+  C-Up three times. You should have 4 cursors going up.
+  Press Esc when done.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha
+  bravo
+  charlie
+  delta
+  echo
+  foxtrot
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 3: Column Is Preserved
+-------------------------------
+
+The cursor column is preserved, not just the line. This means
+if you start at column 10, all cursors will be at column 10.
+
+> Try it: place cursor on the number "10" (the "1" digit) on line 1
+  and press C-Down four times. Notice all cursors land on the
+  first digit of each number, not at the beginning of the line.
+  Press Esc when done.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  width   = 10
+  height  = 20
+  depth   = 30
+  margin  = 40
+  padding = 50
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 4: Short Lines
+-----------------------
+
+If a line is shorter than the cursor column, the cursor lands
+at the end of that line. This is normal — lines have different
+lengths.
+
+> Try it: place cursor on "x" in "fox" (line 1) and press
+  C-Down four times. Notice the cursor on line 3 ("up") lands
+  at its end because the line is too short.
+  Press Esc when done.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  fox
+  deer
+  up
+  bear
+  wolf
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 5: Insert with Vertical Cursors
+----------------------------------------
+
+After creating vertical cursors, you can type at all of them
+at once. Press i to enter insert mode at each cursor position.
+Everything you type appears at every cursor simultaneously.
+(Insert mode is covered in depth in Tutorial 06.)
+
+> Try it:
+  1. Place cursor at the very beginning of "server1" (line 1)
+  2. Press C-Down four times to create 5 cursors
+  3. Press i to enter insert mode
+  4. Type "host: " (with the space)
+  5. Press Esc twice (normal mode, then exit evm)
+  Each line should now start with "host: ".
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  server1
+  server2
+  server3
+  server4
+  server5
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 6: Append with Vertical Cursors
+----------------------------------------
+
+Press A to jump to the end of each line and enter insert mode.
+Useful for adding a suffix or trailing comma.
+(A works like evil's A — go to end of line, start inserting.)
+
+> Try it:
+  1. Place cursor anywhere on "red" (line 1)
+  2. Press C-Down three times to create 4 cursors
+  3. Press A to append at end of line
+  4. Type a comma: ,
+  5. Press Esc twice
+  Each line should now end with a comma.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  red
+  green
+  blue
+  yellow
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 7: Putting It Together
+-------------------------------
+
+Real scenario: these lines are missing "export " at the start
+and ";" at the end. Fix both in one go.
+
+Useful keys:
+  I — go to first non-blank character of line + insert mode
+  A — go to end of line + insert mode
+  Esc — exit insert mode (stay in evm)
+  Esc again — exit evm
+
+> Try it:
+  1. Place cursor anywhere on line 1 (I will jump to line start)
+  2. Press C-Down three times (4 cursors)
+  3. Press I to go to beginning of line + insert mode
+  4. Type "export "
+  5. Press Esc (back to normal mode, still in evm)
+  6. Press A to go to end of line + insert mode
+  7. Type ";"
+  8. Press Esc twice
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  const alpha = 1
+  const bravo = 2
+  const charlie = 3
+  const delta = 4
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+That's it for Tutorial 02!
+
+Next: 03-visual-cursors.txt — creating cursors from visual selection.

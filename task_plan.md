@@ -107,6 +107,29 @@
   - [x] 11.3 Оптимизация производительности
   - [ ] 11.4 Финальная документация
 
+- [ ] Phase 12: Interactive Tutorial (demo/)
+  Интерактивный учебник: каждый файл — самодостаточный урок.
+  Пользователь открывает файл в Emacs, читает объяснения и практикуется
+  прямо в нём на подготовленных текстовых примерах.
+
+  - [x] 12.1  `demo/01-find-word.txt` — C-n, visual C-n, add next, n/N, q/Q, \ A, сценарий переименования
+  - [x] 12.2  `demo/02-cursors-vertical.txt` — C-Down / C-Up, создание колонки курсоров
+  - [x] 12.3  `demo/03-visual-cursors.txt` — \ c из visual-line, visual-block, visual-char
+  - [x] 12.4  `demo/04-cursor-extend-modes.txt` — Tab переключение, extend y/d/c, flip (o)
+  - [x] 12.5  `demo/05-movements.txt` — h/j/k/l, w/b/e, 0/^/$ во всех курсорах
+  - [x] 12.6  `demo/06-insert-mode.txt` — i/a/I/A/o/O с real-time replication
+  - [x] 12.7  `demo/07-delete-change-yank.txt` — d/c/y + motions, dd/cc/yy, D/C/Y
+  - [x] 12.8  `demo/08-text-objects.txt` — diw, ci", da), ya>, dit и т.д.
+  - [ ] 12.9  `demo/09-quick-edits.txt` — x/X, r, ~, J (join lines)
+  - [ ] 12.10 `demo/10-indent.txt` — >>/<< , >j, >ip, <ip
+  - [ ] 12.11 `demo/11-case-operators.txt` — gu/gU/g~ + motions, extend U/u/~
+  - [ ] 12.12 `demo/12-registers.txt` — VM registers, "a prefix, p/P, распределение по курсорам
+  - [ ] 12.13 `demo/13-surround.txt` — S (extend), ys+motion, ds, cs
+  - [ ] 12.14 `demo/14-align.txt` — \ a (align cursors)
+  - [ ] 12.15 `demo/15-run-at-cursors.txt` — \ z (normal cmd), \ @ (macro), \ : (ex cmd)
+  - [ ] 12.16 `demo/16-restrict.txt` — \ r (restrict search to visual region)
+  - [ ] 12.17 `demo/17-undo-redo.txt` — u / C-r, \ g S (reselect last)
+
 ## Blocked / Open Questions
 - [ ] Название пакета: evil-visual-multi? evm? multi-cursor-evil?
 - [ ] Лицензия: GPL-3+?

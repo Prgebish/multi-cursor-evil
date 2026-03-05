@@ -991,6 +991,38 @@
     (let ((leader (evm--leader-region)))
       (should (= (point) (evm--region-visual-cursor-pos leader))))))
 
+(ert-deftest evm-test-undo-adjusts-cursor-to-last-char ()
+  "After undo, evm--adjust-cursor-pos should clamp cursors off newline.
+Regression: paste moves markers into inserted text; undo removes text
+and Emacs pushes markers to line-end-position, creating stale overlays."
+  (evm-test-with-buffer "aaa\nbbb\nccc\n"
+    ;; Cursors at end-of-line (position 3 = last char 'a', 7 = last 'b')
+    (evm-activate)
+    (evm--create-region 3 3)
+    (evm--create-region 7 7)
+    ;; Simulate markers ending up on newline (as happens after undo of paste)
+    (dolist (region (evm-state-regions evm--state))
+      (let ((eol-pos (save-excursion
+                       (goto-char (marker-position (evm-region-beg region)))
+                       (line-end-position))))
+        (evm--region-set-cursor-pos region eol-pos)))
+    ;; Verify markers are on newline
+    (dolist (region (evm-state-regions evm--state))
+      (should (= (marker-position (evm-region-beg region))
+                 (save-excursion
+                   (goto-char (marker-position (evm-region-beg region)))
+                   (line-end-position)))))
+    ;; Apply the adjustment (what evm-undo does)
+    (dolist (region (evm-state-regions evm--state))
+      (evm--region-set-cursor-pos
+       region (evm--adjust-cursor-pos (evm--region-cursor-pos region))))
+    ;; Verify: cursors moved back to last character (off newline)
+    (dolist (region (evm-state-regions evm--state))
+      (let ((pos (marker-position (evm-region-beg region))))
+        (save-excursion
+          (goto-char pos)
+          (should-not (= pos (line-end-position))))))))
+
 ;;; Restrict to region tests
 
 (ert-deftest evm-test-restrict-active-p ()
@@ -1385,7 +1417,48 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
   (should (memq ?\[ evm--text-objects))
   (should (memq ?\] evm--text-objects))
   (should (memq ?{ evm--text-objects))
-  (should (memq ?} evm--text-objects)))
+  (should (memq ?} evm--text-objects))
+  (should (memq ?b evm--text-objects))
+  (should (memq ?B evm--text-objects)))
+
+(ert-deftest evm-test-text-object-ranges ()
+  "Text objects should return correct ranges via evm--get-motion-range."
+  ;; di[ - inner brackets
+  (with-temp-buffer
+    (evil-local-mode 1) (evil-normal-state)
+    (insert "x = [1, 2, 3]")
+    (goto-char 6) ;; on "1"
+    (let ((range (evm--get-motion-range "i[" 1)))
+      (should range)
+      (delete-region (car range) (cadr range))
+      (should (string= (buffer-string) "x = []"))))
+  ;; di{ - inner curly braces
+  (with-temp-buffer
+    (evil-local-mode 1) (evil-normal-state)
+    (insert "x = {a, b}")
+    (goto-char 6)
+    (let ((range (evm--get-motion-range "i{" 1)))
+      (should range)
+      (delete-region (car range) (cadr range))
+      (should (string= (buffer-string) "x = {}"))))
+  ;; iB - curly braces via B alias
+  (with-temp-buffer
+    (evil-local-mode 1) (evil-normal-state)
+    (insert "x = {a, b}")
+    (goto-char 6)
+    (let ((range (evm--get-motion-range "iB" 1)))
+      (should range)
+      (delete-region (car range) (cadr range))
+      (should (string= (buffer-string) "x = {}"))))
+  ;; di( - inner parens
+  (with-temp-buffer
+    (evil-local-mode 1) (evil-normal-state)
+    (insert "print(hello)")
+    (goto-char 7)
+    (let ((range (evm--get-motion-range "i(" 1)))
+      (should range)
+      (delete-region (car range) (cadr range))
+      (should (string= (buffer-string) "print()")))))
 
 (ert-deftest evm-test-digit-p ()
   "evm--digit-p should recognize digits 1-9."
@@ -1776,6 +1849,42 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     (evm-paste-after)
     ;; Should insert after cursor positions: aXb, cYd
     (should (string= (buffer-string) "aXb\ncYd"))))
+
+(ert-deftest evm-test-paste-after-cursor-position ()
+  "p should place cursors on last inserted character."
+  (evm-test-with-buffer "aaa\nbbb\nccc"
+    (evm-activate)
+    (puthash ?\" '("XX" "YY" "ZZ") (evm-state-registers evm--state))
+    (evm--create-region 1 1 nil)
+    (evm--create-region 5 5 nil)
+    (evm--create-region 9 9 nil)
+    (evm-paste-after)
+    (should (string= (buffer-string) "aXXaa\nbYYbb\ncZZcc"))
+    ;; Cursors should be on last inserted char (second X, Y, Z)
+    (let ((positions (mapcar (lambda (r) (marker-position (evm-region-beg r)))
+                             (evm-state-regions evm--state))))
+      (should (= (length positions) 3))
+      (should (equal (char-after (nth 0 positions)) ?X))
+      (should (equal (char-after (nth 1 positions)) ?Y))
+      (should (equal (char-after (nth 2 positions)) ?Z)))))
+
+(ert-deftest evm-test-paste-before-cursor-position ()
+  "P should place cursors on last inserted character."
+  (evm-test-with-buffer "aaa\nbbb\nccc"
+    (evm-activate)
+    (puthash ?\" '("XX" "YY" "ZZ") (evm-state-registers evm--state))
+    (evm--create-region 1 1 nil)
+    (evm--create-region 5 5 nil)
+    (evm--create-region 9 9 nil)
+    (evm-paste-before)
+    (should (string= (buffer-string) "XXaaa\nYYbbb\nZZccc"))
+    ;; Cursors should be on last inserted char (second X, Y, Z)
+    (let ((positions (mapcar (lambda (r) (marker-position (evm-region-beg r)))
+                             (evm-state-regions evm--state))))
+      (should (= (length positions) 3))
+      (should (equal (char-after (nth 0 positions)) ?X))
+      (should (equal (char-after (nth 1 positions)) ?Y))
+      (should (equal (char-after (nth 2 positions)) ?Z)))))
 
 ;;; Multiline mode tests (9.2)
 

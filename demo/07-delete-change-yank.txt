@@ -1,0 +1,274 @@
+EVM Tutorial 07: Delete, Change, Yank
+=======================================
+
+In cursor mode, d/c/y are operators — they wait for a motion,
+then act on the text between the cursor and the motion target.
+This works at ALL cursors simultaneously.
+
+  d + motion = delete          (text goes to register)
+  c + motion = delete + insert (type the replacement)
+  y + motion = copy            (text goes to register)
+
+Extend mode d/c/y was covered in Tutorial 04 — there, operators
+act directly on selections without needing a motion.
+
+
+Lesson 1: Delete with Word Motions (dw, de, db)
+-------------------------------------------------
+
+dw deletes from cursor to the start of the next word.
+de deletes from cursor to the end of the current word.
+db deletes backward to the start of the previous word.
+
+> Try it: remove the "const" keyword.
+  1. Place cursor on "c" of "const" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press dw — deletes "const " at all cursors
+     (dw deletes the word plus trailing space)
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  const width = 10
+  const height = 20
+  const depth = 30
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  width = 10
+  height = 20
+  depth = 30
+
+
+Lesson 2: Delete to Line Boundaries (d$, d^, d0)
+---------------------------------------------------
+
+d$ deletes from cursor to end of line.
+d^ deletes backward to the first non-blank character.
+d0 deletes backward to column 0.
+
+D is a shortcut for d$ (like in vim).
+
+> Try it: remove the semicolons and trailing comments.
+  1. Place cursor on ";" on line 1 below
+  2. Press C-Down twice (3 cursors on the ";" signs)
+  3. Press D — deletes from ";" to end of each line
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  x = 10; // reset
+  y = 20; // reset
+  z = 30; // reset
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  x = 10
+  y = 20
+  z = 30
+
+
+Lesson 3: Delete Line (dd)
+----------------------------
+
+dd deletes the entire line (including the newline character).
+This is the same as vim's dd — repeated operator key means
+"operate on the whole line".
+
+> Try it: remove the debug lines.
+  1. Place cursor on "debug" on line 2 below, press C-n
+  2. Press C-n once more (selects second "debug" line)
+  3. Press Tab to switch to cursor mode
+  4. Press dd — both debug lines are deleted entirely
+  5. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  result = compute(data)
+  debug("step 1:", result)
+  result = transform(result)
+  debug("step 2:", result)
+  return result
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  result = compute(data)
+  result = transform(result)
+  return result
+
+
+Lesson 4: Change with Motions (cw, ce, c$)
+--------------------------------------------
+
+c works like d, but after deleting it enters insert mode.
+Whatever you type replaces the deleted text at all cursors.
+
+cw = delete word, then insert.
+c$ = delete to end of line, then insert.
+C is a shortcut for c$ (like in vim).
+
+> Try it: change the status values.
+  1. Place cursor on "o" of "ok" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press cw — "ok" is deleted, you're in insert mode
+     (cw from the start of a word changes the whole word)
+  4. Type "done"
+  5. Press Esc, then Esc
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  status = ok
+  status = ok
+  status = ok
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  status = done
+  status = done
+  status = done
+
+  Tip: for changing an entire word found by C-n, extend mode
+  c is simpler (see Tutorial 04). Cursor mode cw shines when
+  you want to change part of a word, e.g. cw on a prefix.
+
+
+Lesson 5: Change Line (cc)
+-----------------------------
+
+cc deletes the entire line content and enters insert mode.
+
+> Try it: replace the lines entirely.
+  1. Place cursor on "color" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press cc — line content deleted, insert mode
+  4. Type "shade = dark"
+  5. Press Esc, then Esc
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  color = red
+  color = green
+  color = blue
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  shade = dark
+  shade = dark
+  shade = dark
+
+
+Lesson 6: Yank with Motions (yw, ye, y$)
+-------------------------------------------
+
+y copies text without deleting it. The copied text is stored
+in the VM register and can be pasted with p.
+
+yw = yank word, y$ = yank to end of line, yy = yank line.
+Y is a shortcut for yy (yanks the full line).
+
+> Try it: copy the keys and paste them as values.
+  1. Place cursor on "a" of "alpha" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press yw — yanks the word at each cursor
+     (message: "Yanked 3 regions")
+  4. Press $ to jump to end of each line
+  5. Press a to append — enter insert mode
+  6. Type " = " then press Esc (back to cursor mode)
+  7. Press p — pastes each yanked word: "alpha", "bravo",
+     "charlie" distributed 1-to-1 to each cursor
+  8. Press Esc to exit evm
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha:
+  bravo:
+  charlie:
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  alpha: = alpha
+  bravo: = bravo
+  charlie: = charlie
+
+
+Lesson 7: Counts (d3w, 2dd)
+------------------------------
+
+Operators accept counts, just like in vim:
+  d3w = delete 3 words
+  2dd = delete 2 lines
+  3dw = delete word×3 (same as d3w)
+  2d3w = delete word×6 (counts multiply)
+
+> Try it: delete 2 words at once.
+  1. Place cursor on "very" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press d2w — deletes "very " and the next word
+     at each cursor (2 words removed)
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  very long name
+  very long path
+  very long text
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  name
+  path
+  text
+
+
+Lesson 8: Special Behavior — dw at Line End
+----------------------------------------------
+
+In vim, dw does NOT delete the newline when the cursor is
+on the last word of a line. EVM follows this convention —
+lines are never accidentally joined.
+
+> Try it: delete the last word on each line.
+  1. Place cursor on "end" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press dw — "end" is deleted, but the newline is NOT.
+     The three lines remain separate (not joined into one)
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  start:end
+  start:end
+  start:end
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  start:
+  start:
+  start:
+
+  Without this safety, dw would delete the newline too,
+  joining "start:" with the next line.
+
+
+Lesson 9: Practical Workflow
+-------------------------------
+
+The real power comes from combining cursor creation,
+navigation, and operators in a single sequence.
+
+> Try it: navigate to the values and change them.
+  1. Place cursor on the first character of line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press f= — all cursors jump to "="
+  4. Press l l — cursors move to the first digit
+  5. Press C — deletes to end of line, enters insert mode
+  6. Type "0"
+  7. Press Esc, then Esc
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  width  = 0
+  height = 0
+  depth  = 0
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  width  = 0
+  height = 0
+  depth  = 0
+
+
+That's it for Tutorial 07!
+
+Next: 08-text-objects.txt — diw, ci", da), and other text objects.

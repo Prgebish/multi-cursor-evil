@@ -1,0 +1,134 @@
+EVM Tutorial 03: Cursors from Visual Selection (\ c)
+=====================================================
+
+In Tutorial 02 you created vertical cursors with C-Down/C-Up.
+But sometimes you need cursors on a specific range of lines,
+or at a specific block column. The \ c command (backslash then c)
+creates cursors from the current evil visual selection.
+
+The behavior depends on the visual mode:
+  V     (visual-line)  — cursor on each selected line
+  C-v   (visual-block) — cursor at the block column on each line
+  v     (visual-char)  — cursor at start and end of selection
+
+
+Lesson 1: Visual Line (V + \ c)
+---------------------------------
+
+Select lines with V (Shift-v), then press \ c. A cursor appears
+at the first non-blank character of each selected line.
+
+This is like C-Down but you choose the exact range of lines.
+
+> Try it:
+  1. Place cursor on line 2 ("bravo")
+  2. Press V to enter visual-line mode
+  3. Press j three times to extend selection to line 5
+  4. Press \ c (backslash, then c)
+  You should have 4 cursors, one per selected line.
+  Press Esc when done.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha
+  bravo
+  charlie
+  delta
+  echo
+  foxtrot
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 2: Visual Line with Indentation
+----------------------------------------
+
+In visual-line mode, cursors land at the first non-blank
+character, not at column 0. This is useful for indented code.
+
+> Try it:
+  1. Place cursor on the "if" line
+  2. Press V, then j twice to select three indented lines
+  3. Press \ c
+  Notice cursors land on "if", "total", and "flag" — not on
+  the leading spaces. Press Esc when done.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def process():
+      if ready:
+          total = 0
+          flag = True
+      return total
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 3: Visual Block (C-v + \ c)
+------------------------------------
+
+Select a rectangular block with C-v (Ctrl-v), then press \ c.
+A cursor appears at the block column on each line within
+the selection. This is precise column control.
+
+> Try it:
+  1. Place cursor on "1" in "10" on line 1
+  2. Press C-v to enter visual-block mode
+  3. Press j four times to extend the block down
+  4. Press \ c
+  You should have 5 cursors, all at the same column.
+  Press Esc when done.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  width   = 10
+  height  = 20
+  depth   = 30
+  margin  = 40
+  padding = 50
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 4: Visual Char (v + \ c)
+---------------------------------
+
+Select text with v (character-wise visual mode), then press \ c.
+This creates exactly two cursors: one at the start and one at
+the end of the selection. Useful when you want to edit both
+boundaries of a range.
+
+> Try it:
+  1. Place cursor on the opening bracket "[" on line 1
+  2. Press v, then press f] to extend selection to "]"
+  3. Press \ c
+  You should have 2 cursors: one on "[" and one on "]".
+  Press Esc when done.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  items = [apple, banana, cherry]
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 5: Putting It Together
+-------------------------------
+
+Real scenario: add a comma after each number in the list below.
+Use visual-line to create cursors on the number lines only
+(skip the header and footer).
+
+> Try it:
+  1. Place cursor on the "10" line
+  2. Press V, then j three times to select the four number lines
+  3. Press \ c to create 4 cursors
+  4. Press A to append at end of line
+  5. Type a comma: ,
+  6. Press Esc twice
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  values = [
+      10
+      20
+      30
+      40
+  ]
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+That's it for Tutorial 03!
+
+Next: 04-cursor-extend-modes.txt — cursor mode vs extend mode.

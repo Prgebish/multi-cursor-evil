@@ -1291,8 +1291,7 @@ In extend mode, replaces selected regions. In cursor mode, inserts at cursor."
         (delete-region (marker-position (evm-region-beg region))
                        (marker-position (evm-region-end region)))))
     ;; Insert new content (sorted by position, matching contents order)
-    ;; After insert, beg marker moves to end of inserted text (marker-insertion-type = t)
-    ;; This is desired: cursor should be on last inserted char like evil
+    ;; After insert, set cursor on last inserted char (like evil p/P)
     (cl-loop for region in sorted-regions
              for idx from 0
              for content = (cond
@@ -1307,15 +1306,12 @@ In extend mode, replaces selected regions. In cursor mode, inserts at cursor."
                   ;; In cursor mode with 'after', move past cursor char
                   (when (and after (not extend-mode-p))
                     (forward-char 1))
-                  (insert content)))
-    ;; After paste, cursor should be on last inserted char (like evil)
-    ;; beg marker is now at end of inserted text, move back by 1
-    (dolist (region sorted-regions)
-      (let ((pos (marker-position (evm-region-beg region))))
-        (when (> pos (point-min))
-          (set-marker (evm-region-beg region) (1- pos))
-          (set-marker (evm-region-end region) (1- pos))
-          (set-marker (evm-region-anchor region) (1- pos)))))
+                  (insert content)
+                  ;; Place cursor on last inserted char
+                  (let ((cursor-pos (1- (point))))
+                    (set-marker (evm-region-beg region) cursor-pos)
+                    (set-marker (evm-region-end region) cursor-pos)
+                    (set-marker (evm-region-anchor region) cursor-pos))))
     (setf (evm-state-mode evm--state) 'cursor)
     (evm--update-all-overlays)
     (evm--update-keymap)
@@ -1576,7 +1572,7 @@ after FN completes (useful for commands like o/O that move point)."
 
 ;; Text objects for i/a
 (defconst evm--text-objects
-  '(?w ?W ?s ?p ?b ?\( ?\) ?\[ ?\] ?{ ?} ?< ?> ?\" ?' ?` ?t)
+  '(?w ?W ?s ?p ?b ?B ?\( ?\) ?\[ ?\] ?{ ?} ?< ?> ?\" ?' ?` ?t)
   "Valid text objects for i/a prefix.")
 
 ;; g-motions
@@ -2285,6 +2281,14 @@ Moves cursor to leader position after resync."
     ;; Resync regions to pattern matches
     (when (car (evm-state-patterns evm--state))
       (evm--resync-regions-to-pattern))
+    ;; Adjust cursor positions: after undo, markers may land on newline
+    ;; (e.g. paste moved markers into inserted text; undo removes text
+    ;; and Emacs pushes markers to line-end-position).  Clamp them back
+    ;; to the last character like evil-adjust-cursor does.
+    (dolist (region (evm-state-regions evm--state))
+      (evm--region-set-cursor-pos
+       region (evm--adjust-cursor-pos (evm--region-cursor-pos region))))
+    (evm--remove-all-overlays-thorough)
     (evm--update-all-overlays)
     ;; Move cursor to leader position (regions may have moved after resync)
     (when-let ((leader (evm--leader-region)))
@@ -2300,6 +2304,11 @@ Moves cursor to leader position after resync."
     ;; Resync regions to pattern matches
     (when (car (evm-state-patterns evm--state))
       (evm--resync-regions-to-pattern))
+    ;; Adjust cursor positions (same rationale as evm-undo)
+    (dolist (region (evm-state-regions evm--state))
+      (evm--region-set-cursor-pos
+       region (evm--adjust-cursor-pos (evm--region-cursor-pos region))))
+    (evm--remove-all-overlays-thorough)
     (evm--update-all-overlays)
     ;; Move cursor to leader position (regions may have moved after resync)
     (when-let ((leader (evm--leader-region)))
