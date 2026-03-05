@@ -1,0 +1,216 @@
+EVM Tutorial 11: Case Change Operators
+========================================
+
+Two ways to change case in EVM:
+
+  Cursor mode (operator + motion):
+    gu + motion = lowercase       (guiw, guw, guu, gu$)
+    gU + motion = uppercase       (gUiw, gUw, gUU, gU$)
+    g~ + motion = toggle case     (g~iw, g~w, g~~, g~$)
+
+  Extend mode (direct on selections):
+    u = lowercase selections
+    U = uppercase selections
+    ~ = toggle case of selections  (covered in Tutorial 09)
+
+
+Lesson 1: Uppercase Word (gUw, gUiw)
+---------------------------------------
+
+gU is an operator — it waits for a motion, then uppercases
+the text between the cursor and the motion target.
+
+gUw uppercases from cursor to the next word boundary.
+gUiw uppercases the entire inner word (regardless of cursor
+position within the word).
+
+> Try it: uppercase the variable names.
+  1. Place cursor on "n" of "name" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press gUiw — the whole word is uppercased
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = 1
+  name = 2
+  name = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  NAME = 1
+  NAME = 2
+  NAME = 3
+
+
+Lesson 2: Lowercase Word (guw, guiw)
+---------------------------------------
+
+gu works the same way, but lowercases the text.
+
+> Try it: lowercase the shouting keywords.
+  1. Place cursor on "E" of "ERROR" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press guiw — the whole word is lowercased
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  type = ERROR
+  type = ERROR
+  type = ERROR
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  type = error
+  type = error
+  type = error
+
+
+Lesson 3: Case Change Entire Line (gUU, guu, g~~)
+----------------------------------------------------
+
+Doubling the second key applies the operator to the entire
+line — the same pattern as dd, cc, >>, etc.
+
+  gUU = uppercase the whole line
+  guu = lowercase the whole line
+  g~~ = toggle case of the whole line
+
+> Try it: uppercase the full lines.
+  1. Place cursor on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press gUU — entire lines are uppercased
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  hello world
+  foo bar
+  one two
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  HELLO WORLD
+  FOO BAR
+  ONE TWO
+
+
+Lesson 4: Case Change with Motions (gU$, gu0, g~e)
+------------------------------------------------------
+
+Case operators accept any motion, not just w and iw.
+
+  gU$ = uppercase from cursor to end of line
+  gu0 = lowercase from cursor to start of line
+  g~e = toggle case to end of current word
+
+> Try it: uppercase from the values to end of line.
+  1. Place cursor on "a" of "alpha" on line 1 below
+  2. Press C-Down twice (3 cursors on "a")
+  3. Press gU$ — from cursor to end of line is uppercased
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  key = alpha
+  key = bravo
+  key = gamma
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  key = ALPHA
+  key = BRAVO
+  key = GAMMA
+
+
+Lesson 5: Toggle Case (g~)
+-----------------------------
+
+g~ inverts the case of each character: uppercase becomes
+lowercase and vice versa. Useful for fixing accidental
+caps lock.
+
+> Try it: toggle the mistyped text.
+  1. Place cursor on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press g~~ — entire lines have their case toggled
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  hELLO wORLD
+  hELLO wORLD
+  hELLO wORLD
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  Hello World
+  Hello World
+  Hello World
+
+
+Lesson 6: Extend Mode — U, u, ~ (Direct)
+-------------------------------------------
+
+In extend mode, case changes act directly on the selected
+text — no motion needed. This is faster when you already
+have selections from C-n.
+
+  U = uppercase selections
+  u = lowercase selections
+  ~ = toggle case of selections
+
+> Try it: uppercase the status values.
+  1. Place cursor on "ok" on line 1 below, press C-n
+  2. Press n twice (3 matches of "ok" selected)
+  3. Press U — all selections become "OK"
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  status = ok
+  status = ok
+  status = ok
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  status = OK
+  status = OK
+  status = OK
+
+  Note: in extend mode, u is lowercase (not undo). To undo
+  in extend mode, press Tab first to switch to cursor mode,
+  then u.
+
+
+Lesson 7: Practical Workflow
+-------------------------------
+
+Combining cursor creation with case operators is a fast
+way to fix naming conventions across multiple occurrences.
+
+> Try it: uppercase the constant names.
+  1. Place cursor on "m" of "max_size" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press gU$ — uppercase from cursor to end of line
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  max_size = 100
+  max_count = 50
+  max_depth = 10
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  MAX_SIZE = 100
+  MAX_COUNT = 50
+  MAX_DEPTH = 10
+
+  Quick reference:
+    Cursor mode (operator + motion):
+      gUw / gUiw  uppercase word     guw / guiw  lowercase word
+      gUU         uppercase line     guu         lowercase line
+      gU$         uppercase to EOL   g~~         toggle line
+
+    Extend mode (direct):
+      U  uppercase    u  lowercase    ~  toggle case
+
+
+That's it for Tutorial 11!
+
+Next: 12-registers.txt — VM registers, "a prefix, and paste.

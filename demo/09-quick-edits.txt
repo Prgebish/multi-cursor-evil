@@ -1,0 +1,248 @@
+EVM Tutorial 09: Quick Edits
+=============================
+
+Single-character edits that don't need a motion or insert
+mode. These commands act instantly at ALL cursors:
+
+  x = delete character under cursor (forward)
+  X = delete character before cursor (backward)
+  r = replace character (prompts for new char)
+  ~ = toggle case (char in cursor mode, region in extend)
+  J = join current line with the next one
+
+All except ~ work only in cursor mode. The ~ command works
+in both: in cursor mode it toggles one character, in extend
+mode it toggles every character in the selected region.
+
+
+Lesson 1: Delete Character (x)
+--------------------------------
+
+x deletes the character under the cursor — like the Delete
+key. No motion needed, no insert mode. Quick and precise.
+
+> Try it: remove the trailing semicolons.
+  1. Place cursor on ";" on line 1 below
+  2. Press C-Down twice (3 cursors on the ";" signs)
+  3. Press x — semicolons deleted at all cursors
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  width  = 10;
+  height = 20;
+  depth  = 30;
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  width  = 10
+  height = 20
+  depth  = 30
+
+  Tip: x accepts a count — 3x deletes 3 characters.
+
+
+Lesson 2: Delete Character Backward (X)
+------------------------------------------
+
+X deletes the character BEFORE the cursor — like Backspace.
+
+> Try it: remove the dollar signs.
+  1. Place cursor on "1" on line 1 below (right after "$")
+  2. Press C-Down twice (3 cursors on the digits)
+  3. Press X — the "$" before each cursor is deleted
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  price = $100
+  price = $200
+  price = $300
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  price = 100
+  price = 200
+  price = 300
+
+
+Lesson 3: Replace Character (r)
+---------------------------------
+
+r replaces the character under the cursor with a new one.
+After pressing r, EVM prompts "Replace with:" — type one
+character and it replaces at all cursors simultaneously.
+No insert mode. The cursor stays on the replaced character.
+
+> Try it: change the separators.
+  1. Place cursor on ":" on line 1 below
+  2. Press C-Down twice (3 cursors on ":")
+  3. Press r, then type = — colons become "="
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  x:1
+  y:2
+  z:3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  x=1
+  y=2
+  z=3
+
+> Try it: fix a repeated typo.
+  1. Place cursor on "0" in "f0o" on line 1 below
+  2. Press C-Down twice (3 cursors on "0")
+  3. Press r, then type o — "0" becomes "o"
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  f0o = alpha
+  f0o = bravo
+  f0o = gamma
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  foo = alpha
+  foo = bravo
+  foo = gamma
+
+
+Lesson 4: Toggle Case — Cursor Mode (~)
+------------------------------------------
+
+In cursor mode, ~ toggles the case of the character under
+the cursor: lowercase becomes uppercase, and vice versa.
+
+> Try it: capitalize the first letters.
+  1. Place cursor on "h" of "hello" on line 1 below
+  2. Press C-Down twice (3 cursors on "h")
+  3. Press ~ — "h" toggles to "H" at all cursors
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  hello = 1
+  hello = 2
+  hello = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  Hello = 1
+  Hello = 2
+  Hello = 3
+
+
+Lesson 5: Toggle Case — Extend Mode (~)
+------------------------------------------
+
+In extend mode, ~ toggles the case of the ENTIRE selection,
+not just one character. Great for changing whole words.
+
+> Try it: uppercase the boolean values.
+  1. Place cursor on "true" on line 1 below, press C-n
+  2. Press n to add the second "true" (2 matches)
+  3. Press ~ — both selections toggle to "TRUE"
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  enabled = true
+  visible = true
+  active = false
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  enabled = TRUE
+  visible = TRUE
+  active = false
+
+  Tip: ~ always toggles (A->a, a->A). In extend mode you
+  can also use U (uppercase) and u (downcase) for direct
+  one-directional case change — faster than gu/gU motions.
+
+
+Lesson 6: Join Lines (J)
+----------------------------
+
+J joins the current line with the next one. The newline
+and any leading whitespace on the next line are replaced
+with a single space — exactly like vim's J.
+
+> Try it: join split assignments at multiple cursors.
+  1. Place cursor on "let" on line 1 below, press C-n
+  2. Press n twice to add remaining "let" matches
+  3. Press Tab to switch to cursor mode
+  4. Press J — each cursor joins its line with the next
+  5. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  let name =
+      "Alice"
+  let email =
+      "alice@test.com"
+  let role =
+      "admin"
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  let name = "Alice"
+  let email = "alice@test.com"
+  let role = "admin"
+
+  J removed the newlines and leading whitespace, inserting
+  a single space between the joined parts.
+
+Special case: when the next line starts with ) or ], J
+does NOT add a space — the bracket joins directly.
+
+> Try it: close the parenthesis.
+  1. Place cursor on "print" below, press C-n
+  2. Press Tab, then J — ")" joins without a space
+  3. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  print(
+  )
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  print()
+
+
+Lesson 7: Practical Workflow
+-------------------------------
+
+Combine quick edits in a single sequence: use r to replace
+delimiters and x to remove unwanted characters.
+
+> Try it: convert arrays to sets and strip semicolons.
+  1. Place cursor on "d" of "data" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press f[ — all cursors jump to "["
+  4. Press r{ — "[" becomes "{"
+  5. Press f] — all cursors jump to "]"
+  6. Press r} — "]" becomes "}"
+  7. Press l — cursors move to ";"
+  8. Press x — semicolons deleted
+  9. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  data = [a, b, c];
+  data = [d, e, f];
+  data = [g, h, i];
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  data = {a, b, c}
+  data = {d, e, f}
+  data = {g, h, i}
+
+  Quick reference:
+    x  — delete char at cursor        (count: 3x)
+    X  — delete char before cursor
+    r  — replace char at cursor        (prompts)
+    ~  — toggle case (char / region)
+    J  — join with next line           (count: 3J)
+
+
+That's it for Tutorial 09!
+
+Next: 10-indent.txt — indent and outdent with >> and <<.

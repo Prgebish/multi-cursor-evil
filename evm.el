@@ -1137,15 +1137,19 @@ Respects current restriction if active."
     (evm--start-insert-mode)
     (evil-insert-state)))
 
-(defun evm-delete-char ()
-  "Delete character at all cursors."
-  (interactive)
+(defun evm-delete-char (&optional count)
+  "Delete COUNT characters at all cursors."
+  (interactive "p")
+  (setq count (or count 1))
   (when (evm-cursor-mode-p)
     (evm--push-undo-snapshot)
     (evm--execute-at-all-cursors
      (lambda ()
-       (unless (eobp)
-         (delete-char 1))))))
+       (dotimes (_ count)
+         (unless (or (eobp) (eolp))
+           (delete-char 1)))
+       (goto-char (evm--adjust-cursor-pos (point))))
+     t)))
 
 (defun evm-delete-char-backward ()
   "Delete character before all cursors."
@@ -1167,7 +1171,8 @@ Respects current restriction if active."
        (unless (eobp)
          (delete-char 1)
          (insert char)
-         (backward-char 1))))))
+         (backward-char 1)))
+     t)))
 
 (defun evm-toggle-case-char ()
   "Toggle case of character at all cursors."
@@ -2040,13 +2045,12 @@ DIRECTION is \\='indent or \\='outdent."
          (beg (car range))
          (end (cadr range)))
     (when (and beg end (> end beg))
-      ;; Expand to full lines
+      ;; Expand to full lines (end is inclusive like vim)
       (save-excursion
         (goto-char beg)
         (setq beg (line-beginning-position))
         (goto-char end)
-        (unless (bolp)
-          (setq end (line-end-position))))
+        (setq end (line-end-position)))
       (pcase direction
         ('indent (indent-rigidly beg end tab-width))
         ('outdent (indent-rigidly beg end (- tab-width))))

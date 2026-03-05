@@ -120,10 +120,10 @@
   - [x] 12.6  `demo/06-insert-mode.txt` — i/a/I/A/o/O с real-time replication
   - [x] 12.7  `demo/07-delete-change-yank.txt` — d/c/y + motions, dd/cc/yy, D/C/Y
   - [x] 12.8  `demo/08-text-objects.txt` — diw, ci", da), ya>, dit и т.д.
-  - [ ] 12.9  `demo/09-quick-edits.txt` — x/X, r, ~, J (join lines)
-  - [ ] 12.10 `demo/10-indent.txt` — >>/<< , >j, >ip, <ip
-  - [ ] 12.11 `demo/11-case-operators.txt` — gu/gU/g~ + motions, extend U/u/~
-  - [ ] 12.12 `demo/12-registers.txt` — VM registers, "a prefix, p/P, распределение по курсорам
+  - [x] 12.9  `demo/09-quick-edits.txt` — x/X, r, ~, J (join lines)
+  - [x] 12.10 `demo/10-indent.txt` — >>/<< , >j, >ip, <ip
+  - [x] 12.11 `demo/11-case-operators.txt` — gu/gU/g~ + motions, extend U/u/~
+  - [x] 12.12 `demo/12-registers.txt` — VM registers, "a prefix, p/P, распределение по курсорам
   - [ ] 12.13 `demo/13-surround.txt` — S (extend), ys+motion, ds, cs
   - [ ] 12.14 `demo/14-align.txt` — \ a (align cursors)
   - [ ] 12.15 `demo/15-run-at-cursors.txt` — \ z (normal cmd), \ @ (macro), \ : (ex cmd)

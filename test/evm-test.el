@@ -344,6 +344,39 @@
     (evm-delete-char)
     (should (string= (buffer-string) "oo\nar\naz"))))
 
+(ert-deftest evm-test-delete-char-count ()
+  "3x should delete 3 characters at all cursors."
+  (evm-test-with-buffer "abcdef\nghijkl\nmnopqr"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    (evm-delete-char 3)
+    (should (string= (buffer-string) "def\njkl\npqr"))))
+
+(ert-deftest evm-test-delete-char-count-clamp-eol ()
+  "3x on 2-char line should delete only 2 chars, not cross newline."
+  (evm-test-with-buffer "ab\ncd\nef"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    (evm-delete-char 3)
+    (should (string= (buffer-string) "\n\n"))))
+
+(ert-deftest evm-test-delete-char-eol ()
+  "x at end-of-line should clamp cursor to last char, not newline."
+  (evm-test-with-buffer "aa;\nbb;\ncc;"
+    (goto-char 3) ;; on ";"
+    (evm-add-cursor-down)
+    (evm-add-cursor-down)
+    (should (= (evm-region-count) 3))
+    (evm-delete-char)
+    (should (string= (buffer-string) "aa\nbb\ncc"))
+    ;; Cursors should be on last char of each line, not on newline/eob
+    (dolist (region (evm-state-regions evm--state))
+      (let ((pos (marker-position (evm-region-beg region))))
+        (should-not (= (char-after pos) ?\n))
+        (should-not (= pos (point-max)))))))
+
 (ert-deftest evm-test-replace-char ()
   "r should replace char at all cursors."
   (evm-test-with-buffer "foo\nbar\nbaz"
