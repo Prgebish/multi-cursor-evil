@@ -1,0 +1,236 @@
+EVM Tutorial 13: Surround
+==========================
+
+Surround commands wrap, delete, or change surrounding pairs
+(quotes, brackets, tags) at ALL cursors simultaneously.
+
+Requires evil-surround to be installed and loaded.
+
+  S      = surround regions (extend mode)
+  ys     = surround with motion (cursor mode)
+  ds     = delete surround (cursor mode)
+  cs     = change surround (cursor mode)
+
+Common surround characters:
+  "  '  `       — quotes
+  (  )          — parens: ( adds spaces, ) no spaces
+  [  ]          — brackets: [ adds spaces, ] no spaces
+  {  }          — braces: { adds spaces, } no spaces
+  t             — HTML tag (prompts for tag name)
+
+
+Lesson 1: Surround in Extend Mode (S)
+----------------------------------------
+
+S works in extend mode: it reads a character and wraps
+every selected region with that pair.
+
+> Try it: wrap the variable names in quotes.
+  1. Place cursor on "name" on line 1 below, press C-n
+  2. Press n twice (3 matches of "name")
+  3. Press S, then type " — all selections wrapped
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = Alice
+  name = Bob
+  name = Carol
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  "name" = Alice
+  "name" = Bob
+  "name" = Carol
+
+  After S, evm switches to cursor mode automatically.
+
+
+Lesson 2: Surround with Parens (S)
+-------------------------------------
+
+Using ( wraps with spaces inside: ( text ).
+Using ) wraps without spaces: (text).
+Same logic applies to [ ] and { }.
+
+> Try it: wrap the values in parentheses (no spaces).
+  1. Place cursor on "10" on line 1 below
+  2. Press C-Down twice (3 cursors on "10", "20", "30")
+  3. Press viw — select inner word at all cursors
+  4. Press S, then type ) — values wrapped without spaces
+  5. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  width  = 10
+  height = 20
+  depth  = 30
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  width  = (10)
+  height = (20)
+  depth  = (30)
+
+  Tip: if you used ( instead of ), you'd get ( 10 ), etc.
+
+
+Lesson 3: Surround with Motion (ys)
+--------------------------------------
+
+ys works in cursor mode. It reads a motion, then a
+surround character. The motion defines what to wrap.
+
+  ysiw" = surround inner word with "
+  ys$)  = surround to end of line with ()
+  yss"  = surround entire line with "
+
+> Try it: surround each word with quotes using ysiw.
+  1. Place cursor on "a" of "alpha" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press y, then s, then iw, then " — words wrapped
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha
+  bravo
+  gamma
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  "alpha"
+  "bravo"
+  "gamma"
+
+
+Lesson 4: Surround Line (yss)
+--------------------------------
+
+yss is a special case: it surrounds the entire line.
+Like dd deletes a line, yss surrounds a line.
+
+> Try it: wrap each line in brackets.
+  1. Place cursor on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press y, s, s, then ] — lines wrapped with []
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  first item
+  second item
+  third item
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  [first item]
+  [second item]
+  [third item]
+
+
+Lesson 5: Delete Surround (ds)
+---------------------------------
+
+ds reads a surround character and removes that pair
+around each cursor. Works in cursor mode.
+
+  ds" = delete surrounding quotes
+  ds( = delete surrounding parens
+  ds[ = delete surrounding brackets
+
+> Try it: remove the quotes around each value.
+  1. Place cursor on "h" of "hello" on line 1 below
+  2. Press C-Down twice (3 cursors inside the quotes)
+  3. Press d, then s, then " — quotes removed
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  msg = "hello"
+  msg = "world"
+  msg = "test"
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  msg = hello
+  msg = world
+  msg = test
+
+
+Lesson 6: Change Surround (cs)
+---------------------------------
+
+cs reads the OLD surround character, then the NEW one.
+It replaces the surrounding pair at all cursors.
+
+  cs"' = change " to '
+  cs([ = change () to []
+  cs"} = change " to {}
+
+> Try it: change double quotes to single quotes.
+  1. Place cursor on "x" on line 1 below
+  2. Press C-Down twice (3 cursors inside the quotes)
+  3. Press c, then s, then ", then ' — quotes changed
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  key = "x"
+  key = "y"
+  key = "z"
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  key = 'x'
+  key = 'y'
+  key = 'z'
+
+> Try it: change parens to brackets.
+  1. Place cursor on "1" on line 1 below
+  2. Press C-Down twice (3 cursors inside parens)
+  3. Press c, then s, then ), then ] — parens to brackets
+  4. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  data(1, 2)
+  data(3, 4)
+  data(5, 6)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  data[1, 2]
+  data[3, 4]
+  data[5, 6]
+
+
+Lesson 7: Practical Workflow
+-------------------------------
+
+Combine surround with other evm features for powerful
+multi-cursor editing.
+
+> Try it: wrap string values in backticks and change
+  the assignment operator.
+  1. Place cursor on "foo" on line 1 below
+  2. Press C-Down twice (3 cursors on "foo", "bar", "baz")
+  3. Press ysiw` — surround each word with backticks
+  4. Press 0 — jump to start of line
+  5. Press f= — jump to "="
+  6. Press r: — replace "=" with ":"
+  7. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = foo
+  name = bar
+  name = baz
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected result:
+  name : `foo`
+  name : `bar`
+  name : `baz`
+
+  Quick reference:
+    S + char          surround selections (extend mode)
+    ys + motion + char  surround with motion (cursor mode)
+    yss + char        surround entire line
+    ds + char         delete surrounding pair
+    cs + old + new    change surrounding pair
+
+
+That's it for Tutorial 13!
