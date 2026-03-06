@@ -189,3 +189,14 @@ moves ALL cursors simultaneously. In extend mode, motions
 grow or shrink selections instead.
 
 o flips the active end of a selection (like evil visual o).
+
+> Extend and flip:
+  1. C-n on "tag" below, press n once (2 selections)
+  2. l l -- selections grow right to include " ="
+  3. o -- active end flips to the left side
+  4. h h h -- selections grow left
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  my tag = Alice
+  my tag = Bob
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

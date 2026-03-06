@@ -212,6 +212,21 @@ values cycle.
   Hello, Bob!
   Hello, Carol!
 
+> Yank to named register, paste elsewhere:
+  1. Cursor on 10 (line 1), C-Down twice, " + a + yiw, Esc
+  2. C-n on old below, n twice, " + a + p
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  width  = 10
+  height = 20
+  depth  = 30
+
+  size(old, old, old)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  size(10, 20, 30)
+
 
 Lesson 5: Indent and Align
 ----------------------------
@@ -249,6 +264,32 @@ Align (works in both cursor and extend mode):
 
   if check_c():
       print("c")
+
+> Indent whole paragraphs at once:
+  C-n on "alpha" below, n twice, Tab (cursor mode).
+  Press >ip -- indents the entire paragraph around each cursor,
+  not just the cursor line.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha = 1
+  bravo = 2
+
+  alpha = 3
+  bravo = 4
+
+  alpha = 5
+  bravo = 6
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected (tab-width 4):
+      alpha = 1
+      bravo = 2
+
+      alpha = 3
+      bravo = 4
+
+      alpha = 5
+      bravo = 6
 
 > Align equal signs:
   C-n on "=" line 1, n twice, Tab (cursor mode), \ a.
@@ -336,7 +377,23 @@ Cursor mode:
 
 Spacing: ( [ { add spaces inside, ) ] } don't.
 
-> Wrap words with quotes: cursor on "alpha" line 1,
+> Wrap variable names in quotes (extend mode S):
+  1. C-n on "name" below, n twice (3 selections)
+  2. Press S then double-quote -- selections wrapped in ""
+  After S, evm switches to cursor mode automatically.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = Alice
+  name = Bob
+  name = Carol
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  "name" = Alice
+  "name" = Bob
+  "name" = Carol
+
+> Wrap words with quotes (cursor mode ys): cursor on "alpha" line 1,
   C-Down twice, press ysiw" (ys=surround, iw=word, "=char).
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
