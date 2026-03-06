@@ -3,11 +3,13 @@
 ;;; Commentary:
 ;; ERT tests for evm package.
 ;; Run with: make test
-;; Or: emacs -Q --batch -L . -l ert -l test/evm-test.el -f ert-run-tests-batch-and-exit
+;; Or: make test-batch
 
 ;;; Code:
 
 (require 'ert)
+(when (locate-library "evil-surround")
+  (require 'evil-surround))
 (require 'evm)
 
 ;;; Test helpers
@@ -406,7 +408,7 @@
     (evm-find-next)
     ;; Already in extend mode with "foo" selected
     (evm-yank)
-    (let ((contents (gethash ?" (evm-state-registers evm--state))))
+    (let ((contents (gethash ?\" (evm-state-registers evm--state))))
       (should contents)
       (should (= (length contents) 2))
       (should (string= (car contents) "foo")))))
@@ -1404,7 +1406,7 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     (evm-add-cursor-down)
     (should (= (evm-region-count) 2))
     (evm-yank-line)
-    (let ((contents (gethash ?" (evm-state-registers evm--state))))
+    (let ((contents (gethash ?\" (evm-state-registers evm--state))))
       (should contents)
       (should (= (length contents) 2))
       (should (string= (car contents) "foo bar"))
@@ -1932,28 +1934,54 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     (evm-toggle-multiline)
     (should-not (evm-state-multiline-p evm--state))))
 
+(ert-deftest evm-test-find-word-multiline-selection-enables-search ()
+  "Multiline visual selections should enable multiline matching for the session."
+  (evm-test-with-buffer "foo\nbar\nzzz\nfoo\nbar"
+    (goto-char 1)
+    (evil-visual-select 1 8 'inclusive)
+    (evm-find-word)
+    (should (evm-state-multiline-p evm--state))
+    (should (= (evm-region-count) 1))
+    (evm-find-next)
+    (should (equal (evm-test-positions) '(1 13)))
+    (should (equal (evm-test-end-positions) '(8 20)))))
+
+(ert-deftest evm-test-toggle-multiline-blocks-cross-line-matches ()
+  "Disabling multiline should stop adding multi-line matches."
+  (evm-test-with-buffer "foo\nbar\nzzz\nfoo\nbar"
+    (goto-char 1)
+    (evil-visual-select 1 8 'inclusive)
+    (evm-find-word)
+    (should (evm-state-multiline-p evm--state))
+    (evm-toggle-multiline)
+    (should-not (evm-state-multiline-p evm--state))
+    (evm-find-next)
+    (should (= (evm-region-count) 1))
+    (should (equal (evm-test-positions) '(1)))))
+
 ;;; Undo tests (9.3)
 
-(ert-deftest evm-test-push-undo-snapshot ()
-  "evm--push-undo-snapshot should create a snapshot."
-  (evm-test-with-buffer "foo bar foo"
-    (evm-find-word)
-    (evm-find-next)
-    (let ((snapshots-before (length (evm-state-undo-snapshots evm--state))))
-      (evm--push-undo-snapshot)
-      (should (= (length (evm-state-undo-snapshots evm--state))
-                 (1+ snapshots-before))))))
-
-(ert-deftest evm-test-snapshot-structure ()
-  "Snapshot should contain correct data."
-  (evm-test-with-buffer "foo bar foo"
-    (evm-find-word)
-    (evm-find-next)
-    (evm--push-undo-snapshot)
-    (let ((snapshot (car (evm-state-undo-snapshots evm--state))))
-      (should (evm-snapshot-p snapshot))
-      (should (= (length (evm-snapshot-regions-data snapshot)) 2))
-      (should (eq (evm-snapshot-mode snapshot) 'extend)))))
+(ert-deftest evm-test-execute-at-all-cursors-batches-overlay-sync ()
+  "Batch cursor execution should not trigger per-edit synchronization hooks."
+  (evm-test-with-buffer "a\nb\nc"
+    (evm-activate)
+    (evm--create-region 1 1)
+    (evm--create-region 3 3)
+    (let ((overlay-updates 0)
+          (after-change-calls 0))
+      (cl-letf (((symbol-function 'evm--update-all-overlays)
+                 (lambda ()
+                   (cl-incf overlay-updates)))
+                ((symbol-function 'evm--after-change)
+                 (lambda (&rest _args)
+                   (cl-incf after-change-calls))))
+        (evm--execute-at-all-cursors
+         (lambda ()
+           (insert "x"))
+         t))
+      (should (= overlay-updates 1))
+      (should (= after-change-calls 0)))
+    (should (string= (buffer-string) "xa\nxb\nc"))))
 
 ;;; Extend mode text objects
 
@@ -2332,6 +2360,145 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     (evm-toggle-multiline)
     (let ((indicator (evm--mode-line-indicator)))
       (should (string-match-p " M" indicator)))))
+
+;;; Regression tests
+
+(ert-deftest evm-test-find-next-in-cursor-mode-creates-point-cursor ()
+  "n in cursor mode should add point cursors, not full match regions."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-find-word)
+    (evm-toggle-mode)
+    (should (evm-cursor-mode-p))
+    (evm-find-next)
+    (should (equal (evm-test-positions) '(1 9)))
+    (should (equal (evm-test-end-positions) '(1 9)))))
+
+(ert-deftest evm-test-select-all-cursor-mode-creates-point-cursors ()
+  "\\A in cursor mode should add point cursors at match beginnings."
+  (evm-test-with-buffer "foo bar foo baz foo"
+    (evm-find-word)
+    (evm-toggle-mode)
+    (evm-select-all)
+    (should (equal (evm-test-positions) '(1 9 17)))
+    (should (equal (evm-test-end-positions) '(1 9 17)))))
+
+(ert-deftest evm-test-motion-range-around-angle ()
+  "a< should resolve angle text objects through the operator path."
+  (evm-test-with-buffer "<foo>"
+    (goto-char 2)
+    (should (equal (evm--get-motion-range "a<" 1) '(1 6)))))
+
+(ert-deftest evm-test-extend-inner-angle ()
+  "i< in extend mode should select inside angle brackets."
+  (evm-test-with-buffer "<foo>\n<bar>"
+    (goto-char 2)
+    (evm-add-cursor-down)
+    (evm-enter-extend)
+    (setq unread-command-events (list ?<))
+    (evm-extend-inner-text-object)
+    (let ((texts (mapcar (lambda (r)
+                           (buffer-substring (marker-position (evm-region-beg r))
+                                             (marker-position (evm-region-end r))))
+                         (evm-state-regions evm--state))))
+      (should (equal texts '("foo" "bar"))))))
+
+(ert-deftest evm-test-merge-adjacent-regions-keeps-both ()
+  "Adjacent non-overlapping regions should not be merged."
+  (evm-test-with-buffer "abcdef"
+    (evm-activate)
+    (evm--create-region 1 4)
+    (evm--create-region 4 7)
+    (evm--check-and-merge-overlapping)
+    (should (= (evm-region-count) 2))
+    (should (equal (mapcar (lambda (r)
+                             (cons (marker-position (evm-region-beg r))
+                                   (marker-position (evm-region-end r))))
+                           (evm-get-all-regions))
+                   '((1 . 4) (4 . 7))))))
+
+(ert-deftest evm-test-merge-overlap-reassigns-leader ()
+  "Merging overlapping regions should keep a valid leader."
+  (evm-test-with-buffer "abcdef"
+    (evm-activate)
+    (let ((first (evm--create-region 1 4))
+          (second (evm--create-region 3 6)))
+      (evm--set-leader second)
+      (evm--check-and-merge-overlapping)
+      (should (= (evm-region-count) 1))
+      (should (evm--leader-region))
+      (should (= (evm-region-id (evm--leader-region))
+                 (evm-region-id first))))))
+
+(ert-deftest evm-test-resync-respects-restriction ()
+  "Resync should not snap regions to matches outside the active restriction."
+  (evm-test-with-buffer "foo foo foo"
+    (goto-char 5)
+    (evm-find-word)
+    (evm-find-next)
+    (evm--set-restrict 5 12)
+    (let ((regions (evm-get-all-regions)))
+      (set-marker (evm-region-beg (car regions)) 4)
+      (set-marker (evm-region-end (car regions)) 4)
+      (set-marker (evm-region-anchor (car regions)) 4)
+      (set-marker (evm-region-beg (cadr regions)) 8)
+      (set-marker (evm-region-end (cadr regions)) 8)
+      (set-marker (evm-region-anchor (cadr regions)) 8))
+    (evm--resync-regions-to-pattern)
+    (should (equal (evm-test-positions) '(5 9)))))
+
+(ert-deftest evm-test-resync-does-not-reuse-same-match ()
+  "Resync should not snap multiple regions onto the same pattern match."
+  (evm-test-with-buffer "foo foo"
+    (evm-find-word)
+    (evm-find-next)
+    (dolist (region (evm-get-all-regions))
+      (set-marker (evm-region-beg region) 4)
+      (set-marker (evm-region-end region) 4)
+      (set-marker (evm-region-anchor region) 4))
+    (evm--resync-regions-to-pattern)
+    (should (equal (evm-test-positions) '(1 5)))
+    (should (equal (evm-test-end-positions) '(4 8)))))
+
+(ert-deftest evm-test-reselect-last-old-format ()
+  "Reselect should still restore the legacy list-of-cons format."
+  (evm-test-with-buffer "foo bar foo"
+    (evm-activate)
+    (setf (evm-state-last-regions evm--state) '((1 . 1) (9 . 9)))
+    (evm-reselect-last)
+    (should (equal (evm-test-positions) '(1 9)))
+    (should (evm-cursor-mode-p))))
+
+(ert-deftest evm-test-theme-api-loads-with-evm ()
+  "Loading `evm' should also make the theme API available."
+  (should (fboundp 'evm-load-theme))
+  (should (fboundp 'evm-cycle-theme))
+  (should (boundp 'evm-theme))
+  (should (boundp 'evm-highlight-matches)))
+
+(ert-deftest evm-test-highlight-matches-style-updates-face ()
+  "Changing `evm-highlight-matches' should update the match face."
+  (let ((original evm-highlight-matches))
+    (unwind-protect
+        (progn
+          (setq evm-highlight-matches 'background)
+          (evm-load-theme 'default)
+          (should (eq (face-attribute 'evm-match-face :underline nil 'default) nil))
+          (should (stringp (face-attribute 'evm-match-face :background nil 'default))))
+      (setq evm-highlight-matches original)
+      (evm-load-theme 'default))))
+
+(ert-deftest evm-test-rebind-leader-clears-stale-bindings ()
+  "Rebinding the leader should remove the old prefix bindings."
+  (let ((original evm-leader-key))
+    (unwind-protect
+        (progn
+          (setq evm-leader-key ",")
+          (evm-rebind-leader)
+          (should-not (lookup-key evm-mode-map (kbd "\\ A")))
+          (should (eq (lookup-key evm-mode-map (kbd ", A"))
+                      'evm-select-all)))
+      (setq evm-leader-key original)
+      (evm-rebind-leader))))
 
 (provide 'evm-test)
 ;;; evm-test.el ends here

@@ -3,11 +3,11 @@
 ;; Copyright (C) 2025
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; Author: Your Name
+;; Author: Vadim Pavlov <vadim198527@gmail.com>
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1") (evil "1.14.0"))
 ;; Keywords: evil, multiple-cursors, editing
-;; URL: https://github.com/yourname/evil-visual-multi
+;; URL: https://github.com/chestnykh/multi-cursor-evil
 
 ;;; Commentary:
 
@@ -29,16 +29,15 @@
 ;;; Code:
 
 (require 'evm-core)
+(require 'evm-themes)
 
 ;;; Internal macros
 
 (defmacro evm--with-undo-amalgamate (&rest body)
   "Execute BODY with undo amalgamation.
-All changes in BODY become a single undo entry.
-Pushes undo snapshot before execution."
+All changes in BODY become a single undo entry."
   (declare (indent 0) (debug t))
   `(let ((undo-handle (prepare-change-group)))
-     (evm--push-undo-snapshot)
      (unwind-protect
          (progn ,@body)
        (undo-amalgamate-change-group undo-handle))))
@@ -51,6 +50,13 @@ Pushes undo snapshot before execution."
      (unwind-protect
          (progn ,@body)
        (add-hook 'post-command-hook #'evm--post-command nil t))))
+
+(defmacro evm--with-batched-changes (&rest body)
+  "Execute BODY while suppressing per-edit synchronization hooks."
+  (declare (indent 0) (debug t))
+  `(let ((inhibit-modification-hooks t))
+     (evm--without-post-command-hook
+       (progn ,@body))))
 
 ;;; Customization
 
@@ -77,6 +83,21 @@ Call `evm-rebind-leader' after changing to update all keymaps."
 
 (defvar evm-extend-map (make-sparse-keymap)
   "Keymap for extend mode specific bindings.")
+
+(defconst evm--mode-leader-suffixes
+  '("A" "a" "g S" "r" "z" "@" ":")
+  "Leader suffixes bound in `evm-mode-map'.")
+
+(defconst evm--normal-leader-suffixes
+  '("g S")
+  "Leader suffixes bound in `evil-normal-state-map'.")
+
+(defconst evm--visual-leader-suffixes
+  '("r" "c")
+  "Leader suffixes bound in `evil-visual-state-map'.")
+
+(defvar evm--previous-leader-key evm-leader-key
+  "Most recently bound EVM leader key.")
 
 ;; Common bindings (both modes)
 (define-key evm-mode-map (kbd "<escape>") #'evm-exit)
@@ -117,8 +138,17 @@ it is unbound first to allow prefix bindings."
       (define-key keymap leader-key nil))
     (define-key keymap (kbd (concat evm-leader-key " " suffix)) command)))
 
-(defun evm--setup-leader-bindings ()
+(defun evm--unbind-leader-bindings (keymap leader-key suffixes)
+  "Remove LEADER-KEY bindings for SUFFIXES from KEYMAP."
+  (dolist (suffix suffixes)
+    (define-key keymap (kbd (concat leader-key " " suffix)) nil)))
+
+(defun evm--setup-leader-bindings (&optional old-leader-key)
   "Set up all leader-prefixed bindings in evm keymaps."
+  (when (and old-leader-key
+             (not (string= old-leader-key evm-leader-key)))
+    (evm--unbind-leader-bindings evm-mode-map old-leader-key
+                                 evm--mode-leader-suffixes))
   ;; Prefix commands in evm-mode-map
   (evm--bind-leader evm-mode-map "A" #'evm-select-all)
   (evm--bind-leader evm-mode-map "a" #'evm-align)
@@ -198,6 +228,9 @@ it is unbound first to allow prefix bindings."
 
 ;;; Minor mode
 
+(defvar evm--emulation-alist nil
+  "Alist for `emulation-mode-map-alists' to override evil keymaps.")
+
 (defvar evm--saved-cursor nil
   "Saved cursor type before entering evm.")
 
@@ -225,9 +258,6 @@ it is unbound first to allow prefix bindings."
     ;; Restore cursor
     (when evm--saved-cursor
       (setq cursor-type evm--saved-cursor))))
-
-(defvar evm--emulation-alist nil
-  "Alist for `emulation-mode-map-alists' to override evil keymaps.")
 
 (defun evm--update-keymap ()
   "Update keymap based on current evm mode.
@@ -281,7 +311,6 @@ Use this for buffer modifications to avoid position shifts affecting earlier reg
           (evm-state-multiline-p evm--state) nil
           (evm-state-whole-word-p evm--state) t
           (evm-state-case-fold-p evm--state) nil
-          (evm-state-undo-snapshots evm--state) nil
           ;; Keep existing registers or create new hash table
           (evm-state-registers evm--state) (or existing-registers
                                                (make-hash-table :test 'eq))))
@@ -540,8 +569,7 @@ We adjust all markers the same way."
 (defun evm--before-change (_beg _end)
   "Called before buffer modification."
   (when (and (evm-active-p) (not evm--in-change))
-    (setq evm--in-change t)
-    (evm--push-undo-snapshot)))
+    (setq evm--in-change t)))
 
 (defun evm--after-change (_beg _end _len)
   "Called after buffer modification."
@@ -596,6 +624,49 @@ We adjust all markers the same way."
           (unless (= (point) leader-pos)
             (goto-char leader-pos)))))))
 
+(defun evm--goto-leader ()
+  "Move point to the leader's visual cursor position."
+  (when-let ((leader (evm--leader-region)))
+    (goto-char (evm--region-visual-cursor-pos leader))))
+
+(defun evm--finalize-batch-edit (&optional update-keymap)
+  "Finalize a batched buffer edit and resynchronize UI state.
+When UPDATE-KEYMAP is non-nil, refresh the active EVM keymap too."
+  (evm--clamp-markers)
+  (evm--check-and-merge-overlapping)
+  (evm--update-all-overlays)
+  (setq evm--last-buffer-tick (buffer-modified-tick))
+  (when update-keymap
+    (evm--update-keymap))
+  (evm--goto-leader))
+
+(defun evm--search-valid-match (pattern start-pos direction)
+  "Return the next allowed PATTERN match from START-POS in DIRECTION.
+DIRECTION is 1 for forward and -1 for backward.  Returns (BEG . END)
+or nil if no allowed match exists."
+  (let* ((bounds (evm--restrict-bounds))
+         (forward-p (= direction 1))
+         (min-pos (if bounds (car bounds) (point-min)))
+         (max-pos (if bounds (cdr bounds) (point-max)))
+         (search-fn (if forward-p #'re-search-forward #'re-search-backward))
+         (search-limit (if forward-p max-pos min-pos))
+         (first-start (if forward-p
+                          (min start-pos max-pos)
+                        (max start-pos min-pos)))
+         (wrap-start (if forward-p min-pos max-pos)))
+    (cl-labels ((scan-from (pos)
+                  (save-excursion
+                    (goto-char pos)
+                    (catch 'match
+                      (while (funcall search-fn pattern search-limit t)
+                        (let ((beg (match-beginning 0))
+                              (end (match-end 0)))
+                          (when (evm--match-allowed-p beg end)
+                            (throw 'match (cons beg end)))))))))
+      (or (scan-from first-start)
+          (unless (= first-start wrap-start)
+            (scan-from wrap-start))))))
+
 (defun evm--adjust-cursor-pos (pos)
   "Adjust POS like evil-adjust-cursor does.
 In normal state, cursor can't be past the last character of a non-empty line."
@@ -606,6 +677,20 @@ In normal state, cursor can't be past the last character of a non-empty line."
         (1- pos)
       pos)))
 
+(defun evm--region-match-distance (region match)
+  "Return distance from REGION to MATCH, or nil if MATCH is too far away."
+  (let* ((region-beg (marker-position (evm-region-beg region)))
+         (region-end (marker-position (evm-region-end region)))
+         (match-beg (car match))
+         (match-end (cdr match))
+         (match-len (- match-end match-beg))
+         (gap (cond
+               ((< region-end match-beg) (- match-beg region-end))
+               ((< match-end region-beg) (- region-beg match-end))
+               (t 0))))
+    (when (<= gap match-len)
+      gap)))
+
 (defun evm--resync-regions-to-pattern ()
   "Resync region positions to match pattern occurrences in buffer.
 Called after undo to fix marker drift.
@@ -613,47 +698,45 @@ Only moves a region if there's a match very close to its current position
 \(within the length of the match pattern). This prevents jumping to distant
 matches when text hasn't been fully restored by undo."
   (let* ((pattern (car (evm-state-patterns evm--state)))
+         (bounds (evm--restrict-bounds))
          (matches '())
+         (used-matches (make-hash-table :test 'equal))
          (cursor-mode-p (evm-cursor-mode-p)))
     ;; Find all matches
     (save-excursion
-      (goto-char (point-min))
-      (while (re-search-forward pattern nil t)
-        (push (cons (match-beginning 0) (match-end 0)) matches)))
+      (goto-char (if bounds (car bounds) (point-min)))
+      (while (re-search-forward pattern (when bounds (cdr bounds)) t)
+        (let ((beg (match-beginning 0))
+              (end (match-end 0)))
+          (when (evm--match-allowed-p beg end)
+            (push (cons beg end) matches)))))
     (setq matches (nreverse matches))
     (when matches
-      ;; For each region, find a match that contains or is adjacent to current position
-      (dolist (region (evm-state-regions evm--state))
-        (let* ((region-beg (marker-position (evm-region-beg region)))
-               (region-end (marker-position (evm-region-end region)))
-               (found-match nil))
-          ;; Find match that overlaps with region or is very close (within match length)
+      ;; For each region, pick the closest unused nearby match.
+      (dolist (region (evm--regions-by-position))
+        (let (best-match best-distance)
           (dolist (match matches)
-            (let* ((match-beg (car match))
-                   (match-end (cdr match))
-                   (match-len (- match-end match-beg)))
-              ;; Check if region position is within or very close to match
-              (when (or
-                     ;; Region beg is inside match
-                     (and (>= region-beg match-beg) (<= region-beg match-end))
-                     ;; Region end is inside match
-                     (and (>= region-end match-beg) (<= region-end match-end))
-                     ;; Region beg is just before match (within match-len)
-                     (and (< region-beg match-beg) (>= region-beg (- match-beg match-len)))
-                     ;; Region beg is just after match (within match-len)
-                     (and (> region-beg match-end) (<= region-beg (+ match-end match-len))))
-                (setq found-match match))))
-          ;; Only update if we found a nearby match
-          (when found-match
-            ;; In cursor mode: collapse to beginning of match
-            ;; In extend mode: expand to full match
-            (let ((beg (car found-match))
-                  (end (if cursor-mode-p (car found-match) (cdr found-match)))
-                  (anchor (car found-match)))
+            (unless (gethash match used-matches)
+              (when-let ((distance (evm--region-match-distance region match)))
+                (when (or (null best-distance)
+                          (< distance best-distance))
+                  (setq best-distance distance
+                        best-match match)))))
+          (when best-match
+            (let ((beg (car best-match))
+                  (end (if cursor-mode-p (car best-match) (cdr best-match)))
+                  (anchor (car best-match)))
               (set-marker (evm-region-beg region) beg)
               (set-marker (evm-region-end region) end)
               (set-marker (evm-region-anchor region) anchor)
-              (setf (evm-region-dir region) 1)))))
+              (setf (evm-region-dir region) 1
+                    (evm-region-txt region)
+                    (if cursor-mode-p
+                        ""
+                      (buffer-substring-no-properties beg end)))
+              (puthash best-match t used-matches)))))
+      (evm--sort-regions)
+      (evm--check-and-merge-overlapping)
       (evm--update-all-overlays))))
 
 ;;; Movement commands
@@ -803,7 +886,7 @@ In visual mode: uses selected text as search pattern (can be part of word).
 In normal mode: uses word under cursor.
 Like vim-visual-multi, immediately enters extend mode with the text highlighted."
   (interactive)
-  (let (text beg end use-word-bounds)
+  (let (text beg end use-word-bounds selection-multiline-p)
     ;; Get text to search for
     (if (evil-visual-state-p)
         ;; Visual mode: use selected text (any text, not just whole words)
@@ -821,6 +904,7 @@ Like vim-visual-multi, immediately enters extend mode with the text highlighted.
                         (1+ range-end)
                       range-end))
           (setq text (buffer-substring-no-properties beg end))
+          (setq selection-multiline-p (evm--match-spans-lines-p beg end))
           (evil-exit-visual-state))
       ;; Normal mode: use word at point
       (let ((bounds (bounds-of-thing-at-point 'symbol)))
@@ -838,6 +922,8 @@ Like vim-visual-multi, immediately enters extend mode with the text highlighted.
     (when evm--pending-restrict
       (evm--set-restrict (car evm--pending-restrict) (cdr evm--pending-restrict))
       (setq evm--pending-restrict nil))
+    (when selection-multiline-p
+      (setf (evm-state-multiline-p evm--state) t))
     ;; Create pattern: whole word for normal mode, literal for visual selection
     (let ((pattern (if use-word-bounds
                        (concat "\\_<" (regexp-quote text) "\\_>")
@@ -869,56 +955,43 @@ Like vim-visual-multi, immediately enters extend mode with the text highlighted.
   "Find next match for PATTERN and move/add cursor there."
   (let* ((leader (evm--leader-region))
          (start-pos (if leader
-                        (1+ (marker-position (evm-region-end leader)))
+                        (1+ (if (evm-cursor-mode-p)
+                                (evm--region-cursor-pos leader)
+                              (marker-position (evm-region-end leader))))
                       (1+ (point)))))
     (evm--find-and-add-from pattern start-pos 1)))
 
 (defun evm--find-and-add-from (pattern start-pos direction)
   "Find match for PATTERN starting from START-POS in DIRECTION.
 DIRECTION is 1 for forward, -1 for backward.
-Creates region with full match selection in extend mode.
-Respects current restriction if active."
-  (let ((bounds (evm--restrict-bounds))
-        (forward-p (= direction 1))
-        found-beg found-end)
-    (save-excursion
-      ;; Clamp start position to bounds
-      (goto-char (if forward-p
-                     (min start-pos (if bounds (cdr bounds) (point-max)))
-                   (max start-pos (if bounds (car bounds) (point-min)))))
-      ;; Search in direction
-      (let ((search-limit (if forward-p
-                              (when bounds (cdr bounds))
-                            (when bounds (car bounds))))
-            (search-fn (if forward-p #'re-search-forward #'re-search-backward)))
-        (if (and (funcall search-fn pattern search-limit t)
-                 (evm--point-in-restrict-p (match-beginning 0)))
-            (setq found-beg (match-beginning 0)
-                  found-end (match-end 0))
-          ;; Wrap around
-          (goto-char (if forward-p
-                         (if bounds (car bounds) (point-min))
-                       (if bounds (cdr bounds) (point-max))))
-          (when (and (funcall search-fn pattern search-limit t)
-                     (evm--point-in-restrict-p (match-beginning 0)))
-            (setq found-beg (match-beginning 0)
-                  found-end (match-end 0))))))
-    (when found-beg
-      ;; Check if cursor already exists at this position
-      (let ((existing (cl-find-if
-                       (lambda (r)
-                         (= (marker-position (evm-region-beg r)) found-beg))
-                       (evm-state-regions evm--state))))
+Creates a point cursor in cursor mode and a full selection in extend
+mode.  Respects current restriction if active."
+  (when-let ((match (evm--search-valid-match pattern start-pos direction)))
+    (let ((found-beg (car match))
+          (found-end (cdr match)))
+      (let* ((cursor-mode-p (evm-cursor-mode-p))
+             (existing (cl-find-if
+                        (lambda (r)
+                          (= (if cursor-mode-p
+                                 (evm--region-cursor-pos r)
+                               (marker-position (evm-region-beg r)))
+                             found-beg))
+                        (evm-state-regions evm--state))))
         (if existing
             ;; Just move leader to existing cursor
             (progn
               (evm--set-leader existing)
-              (goto-char (1- found-end)))
-          ;; Create new region with full selection
-          (let ((new-region (evm--create-region found-beg found-end pattern)))
+              (goto-char (if cursor-mode-p
+                             (evm--region-cursor-pos existing)
+                           (1- (marker-position (evm-region-end existing))))))
+          ;; Create a point cursor or a full selection depending on mode.
+          (let ((new-region (evm--create-region
+                             found-beg
+                             (if cursor-mode-p found-beg found-end)
+                             pattern)))
             (evm--set-leader new-region)
             (evm--update-all-overlays)
-            (goto-char (1- found-end))))))))
+            (goto-char (if cursor-mode-p found-beg (1- found-end)))))))))
 
 (defun evm-find-next ()
   "Find next occurrence, move leader there."
@@ -1028,7 +1101,7 @@ EVENT is the mouse event.
 
 (defun evm-select-all ()
   "Select all occurrences of current pattern.
-In cursor mode: creates point cursors at end of each match.
+In cursor mode: creates point cursors at beginning of each match.
 In extend mode: creates full selections covering each match.
 Respects current restriction if active."
   (interactive)
@@ -1052,12 +1125,12 @@ Respects current restriction if active."
         (while (re-search-forward pattern (when bounds (cdr bounds)) t)
           (let* ((beg (match-beginning 0))
                  (end (match-end 0))
-                 (check-pos (if cursor-mode-p end beg)))
-            (when (and (evm--point-in-restrict-p beg)
+                 (check-pos beg))
+            (when (and (evm--match-allowed-p beg end)
                        (not (gethash check-pos existing-positions)))
-              ;; In cursor mode: point cursor at end
+              ;; In cursor mode: point cursor at beginning
               ;; In extend mode: full selection
-              (push (if cursor-mode-p (cons end end) (cons beg end))
+              (push (if cursor-mode-p (cons beg beg) (cons beg end))
                     new-positions)
               ;; Mark as existing to avoid duplicates from overlapping matches
               (puthash check-pos t existing-positions)))))
@@ -1088,7 +1161,7 @@ INNER-P selects inner vs outer variant.  Returns (BEG END) or nil."
                   ((or ?\( ?\) ?b) (if inner-p (evil-inner-paren) (evil-a-paren)))
                   ((or ?\[ ?\]) (if inner-p (evil-inner-bracket) (evil-a-bracket)))
                   ((or ?{ ?} ?B) (if inner-p (evil-inner-curly) (evil-a-curly)))
-                  ((or ?< ?>) (if inner-p (evil-inner-angle) (evil-a-angle)))
+                  ((or ?< ?>) (if inner-p (evil-inner-angle) (evil-an-angle)))
                   (?\" (if inner-p (evil-inner-double-quote) (evil-a-double-quote)))
                   (?\' (if inner-p (evil-inner-single-quote) (evil-a-single-quote)))
                   (?\` (if inner-p (evil-inner-back-quote) (evil-a-back-quote)))
@@ -1136,7 +1209,6 @@ INNER-P selects inner variant when non-nil."
   "Enter insert mode at all cursor positions."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
     (evm--start-insert-mode)
     (evil-insert-state)))
 
@@ -1144,7 +1216,6 @@ INNER-P selects inner variant when non-nil."
   "Enter insert mode after all cursor positions."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
     (evm--move-cursors #'forward-char 1)
     (evm--start-insert-mode)
     (evil-insert-state)))
@@ -1153,7 +1224,6 @@ INNER-P selects inner variant when non-nil."
   "Enter insert mode at beginning of lines."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
     (evm--move-cursors #'back-to-indentation)
     (evm--start-insert-mode)
     (evil-insert-state)))
@@ -1162,7 +1232,6 @@ INNER-P selects inner variant when non-nil."
   "Enter insert mode at end of lines."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
     (evm--move-cursors #'end-of-line)
     (evm--start-insert-mode)
     (evil-insert-state)))
@@ -1171,12 +1240,12 @@ INNER-P selects inner variant when non-nil."
   "Open line below and enter insert mode."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
-    (evm--execute-at-all-cursors
-     (lambda ()
-       (end-of-line)
-       (newline-and-indent))
-     t)  ; update-markers = t
+    (evm--with-undo-amalgamate
+      (evm--execute-at-all-cursors
+       (lambda ()
+         (end-of-line)
+         (newline-and-indent))
+       t))
     (evm--start-insert-mode)
     (evil-insert-state)))
 
@@ -1184,14 +1253,14 @@ INNER-P selects inner variant when non-nil."
   "Open line above and enter insert mode."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
-    (evm--execute-at-all-cursors
-     (lambda ()
-       (beginning-of-line)
-       (newline)
-       (forward-line -1)
-       (indent-according-to-mode))
-     t)  ; update-markers = t
+    (evm--with-undo-amalgamate
+      (evm--execute-at-all-cursors
+       (lambda ()
+         (beginning-of-line)
+         (newline)
+         (forward-line -1)
+         (indent-according-to-mode))
+       t))
     (evm--start-insert-mode)
     (evil-insert-state)))
 
@@ -1200,53 +1269,53 @@ INNER-P selects inner variant when non-nil."
   (interactive "p")
   (setq count (or count 1))
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
-    (evm--execute-at-all-cursors
-     (lambda ()
-       (dotimes (_ count)
-         (unless (or (eobp) (eolp))
-           (delete-char 1)))
-       (goto-char (evm--adjust-cursor-pos (point))))
-     t)))
+    (evm--with-undo-amalgamate
+      (evm--execute-at-all-cursors
+       (lambda ()
+         (dotimes (_ count)
+           (unless (or (eobp) (eolp))
+             (delete-char 1)))
+         (goto-char (evm--adjust-cursor-pos (point))))
+       t))))
 
 (defun evm-delete-char-backward ()
   "Delete character before all cursors."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
-    (evm--execute-at-all-cursors
-     (lambda ()
-       (unless (bobp)
-         (delete-char -1))))))
+    (evm--with-undo-amalgamate
+      (evm--execute-at-all-cursors
+       (lambda ()
+         (unless (bobp)
+           (delete-char -1)))))))
 
 (defun evm-replace-char (char)
   "Replace character at all cursors with CHAR."
   (interactive "cReplace with: ")
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
-    (evm--execute-at-all-cursors
-     (lambda ()
-       (unless (eobp)
-         (delete-char 1)
-         (insert char)
-         (backward-char 1)))
-     t)))
+    (evm--with-undo-amalgamate
+      (evm--execute-at-all-cursors
+       (lambda ()
+         (unless (eobp)
+           (delete-char 1)
+           (insert char)
+           (backward-char 1)))
+       t))))
 
 (defun evm-toggle-case-char ()
   "Toggle case of character at all cursors."
   (interactive)
   (when (evm-cursor-mode-p)
-    (evm--push-undo-snapshot)
-    (evm--execute-at-all-cursors
-     (lambda ()
-       (unless (eobp)
-         (let* ((char (char-after))
-                (new-char (if (eq (upcase char) char)
-                              (downcase char)
-                            (upcase char))))
-           (delete-char 1)
-           (insert new-char)
-           (backward-char 1)))))))
+    (evm--with-undo-amalgamate
+      (evm--execute-at-all-cursors
+       (lambda ()
+         (unless (eobp)
+           (let* ((char (char-after))
+                  (new-char (if (eq (upcase char) char)
+                                (downcase char)
+                              (upcase char))))
+             (delete-char 1)
+             (insert new-char)
+             (backward-char 1))))))))
 
 ;;; Extend mode editing commands
 
@@ -1286,13 +1355,11 @@ Also syncs to evil registers for interoperability."
   "Delete content of all regions."
   (interactive)
   (when (evm-extend-mode-p)
-    (evm--push-undo-snapshot)
     ;; First yank
     (evm-yank)
     ;; Delete from end to beginning (inhibit hooks during batch delete)
-    (let ((inhibit-modification-hooks t)
-          (regions (evm--regions-by-position-reverse)))
-      (dolist (region regions)
+    (evm--with-batched-changes
+      (dolist (region (evm--regions-by-position-reverse))
         (delete-region (marker-position (evm-region-beg region))
                        (marker-position (evm-region-end region)))))
     ;; Manually clamp and update after batch operation
@@ -1329,7 +1396,6 @@ In extend mode, replaces selected regions. In cursor mode, inserts before cursor
 Uses `evil-this-register' if set (via \"a prefix), otherwise default register.
 Falls back to evil registers if VM register is empty.
 In extend mode, replaces selected regions. In cursor mode, inserts at cursor."
-  (evm--push-undo-snapshot)
   (let* ((register (or evil-this-register ?\"))
          ;; Normalize uppercase to lowercase for lookup
          (lookup-reg (if (and (>= register ?A) (<= register ?Z))
@@ -1348,39 +1414,36 @@ In extend mode, replaces selected regions. In cursor mode, inserts at cursor."
     (setq evil-this-register nil)
     (unless contents
       (user-error "Register '%c' is empty" register))
-    ;; In extend mode, delete current content first (from end to beginning)
-    (when extend-mode-p
-      (dolist (region (evm--regions-by-position-reverse))
-        (delete-region (marker-position (evm-region-beg region))
-                       (marker-position (evm-region-end region)))))
-    ;; Insert new content (sorted by position, matching contents order)
-    ;; After insert, set cursor on last inserted char (like evil p/P)
-    (cl-loop for region in sorted-regions
-             for idx from 0
-             for content = (cond
-                            ((= num-contents num-regions)
-                             (nth idx contents))
-                            ((= num-contents 1)
-                             (car contents))
-                            (t
-                             (nth (mod idx num-contents) contents)))
-             do (save-excursion
-                  (goto-char (marker-position (evm-region-beg region)))
-                  ;; In cursor mode with 'after', move past cursor char
-                  (when (and after (not extend-mode-p))
-                    (forward-char 1))
-                  (insert content)
-                  ;; Place cursor on last inserted char
-                  (let ((cursor-pos (1- (point))))
-                    (set-marker (evm-region-beg region) cursor-pos)
-                    (set-marker (evm-region-end region) cursor-pos)
-                    (set-marker (evm-region-anchor region) cursor-pos))))
+    (evm--with-batched-changes
+      ;; In extend mode, delete current content first (from end to beginning)
+      (when extend-mode-p
+        (dolist (region (evm--regions-by-position-reverse))
+          (delete-region (marker-position (evm-region-beg region))
+                         (marker-position (evm-region-end region)))))
+      ;; Insert new content (sorted by position, matching contents order)
+      ;; After insert, set cursor on last inserted char (like evil p/P)
+      (cl-loop for region in sorted-regions
+               for idx from 0
+               for content = (cond
+                              ((= num-contents num-regions)
+                               (nth idx contents))
+                              ((= num-contents 1)
+                               (car contents))
+                              (t
+                               (nth (mod idx num-contents) contents)))
+               do (save-excursion
+                    (goto-char (marker-position (evm-region-beg region)))
+                    ;; In cursor mode with 'after', move past cursor char
+                    (when (and after (not extend-mode-p))
+                      (forward-char 1))
+                    (insert content)
+                    ;; Place cursor on last inserted char
+                    (let ((cursor-pos (1- (point))))
+                      (set-marker (evm-region-beg region) cursor-pos)
+                      (set-marker (evm-region-end region) cursor-pos)
+                      (set-marker (evm-region-anchor region) cursor-pos)))))
     (setf (evm-state-mode evm--state) 'cursor)
-    (evm--update-all-overlays)
-    (evm--update-keymap)
-    ;; Sync point to leader position
-    (when-let ((leader (evm--leader-region)))
-      (goto-char (evm--region-visual-cursor-pos leader)))
+    (evm--finalize-batch-edit t)
     (message "Pasted from register '%c'" register)))
 
 (defun evm-flip-direction ()
@@ -1405,26 +1468,28 @@ Moves the anchor to the opposite end of the selection."
   "Uppercase content of all regions."
   (interactive)
   (when (evm-extend-mode-p)
-    (evm--push-undo-snapshot)
-    (dolist (region (evm-state-regions evm--state))
-      (upcase-region (marker-position (evm-region-beg region))
-                     (marker-position (evm-region-end region))))))
+    (evm--with-undo-amalgamate
+      (evm--with-batched-changes
+        (dolist (region (evm-state-regions evm--state))
+          (upcase-region (marker-position (evm-region-beg region))
+                         (marker-position (evm-region-end region))))))
+    (evm--finalize-batch-edit)))
 
 (defun evm-downcase ()
   "Lowercase content of all regions."
   (interactive)
   (when (evm-extend-mode-p)
-    (evm--push-undo-snapshot)
-    (dolist (region (evm-state-regions evm--state))
-      (downcase-region (marker-position (evm-region-beg region))
-                       (marker-position (evm-region-end region))))))
+    (evm--with-undo-amalgamate
+      (evm--with-batched-changes
+        (dolist (region (evm-state-regions evm--state))
+          (downcase-region (marker-position (evm-region-beg region))
+                           (marker-position (evm-region-end region))))))
+    (evm--finalize-batch-edit)))
 
 (defun evm-toggle-case ()
   "Toggle case of content in all regions."
   (interactive)
   (when (evm-extend-mode-p)
-    (evm--push-undo-snapshot)
-    ;; Save positions before modification (markers will shift)
     (let ((saved-positions
            (mapcar (lambda (r)
                      (list r
@@ -1432,25 +1497,26 @@ Moves the anchor to the opposite end of the selection."
                            (marker-position (evm-region-end r))
                            (marker-position (evm-region-anchor r))))
                    (evm-state-regions evm--state))))
-      ;; Toggle case using delete/insert
-      (dolist (region (evm-state-regions evm--state))
-        (let ((beg (marker-position (evm-region-beg region)))
-              (end (marker-position (evm-region-end region))))
-          (save-excursion
-            (goto-char beg)
-            (while (< (point) end)
-              (let* ((char (char-after))
-                     (new-char (if (eq (upcase char) char)
-                                   (downcase char)
-                                 (upcase char))))
-                (delete-char 1)
-                (insert new-char))))))
-      ;; Restore marker positions
+      (evm--with-undo-amalgamate
+        (evm--with-batched-changes
+          (dolist (region (evm-state-regions evm--state))
+            (let ((beg (marker-position (evm-region-beg region)))
+                  (end (marker-position (evm-region-end region))))
+              (save-excursion
+                (goto-char beg)
+                (while (< (point) end)
+                  (let* ((char (char-after))
+                         (new-char (if (eq (upcase char) char)
+                                       (downcase char)
+                                     (upcase char))))
+                    (delete-char 1)
+                    (insert new-char))))))))
       (dolist (saved saved-positions)
         (cl-destructuring-bind (region beg end anchor) saved
           (set-marker (evm-region-beg region) beg)
           (set-marker (evm-region-end region) end)
-          (set-marker (evm-region-anchor region) anchor))))))
+          (set-marker (evm-region-anchor region) anchor)))
+      (evm--finalize-batch-edit))))
 
 ;;; Utility commands
 
@@ -1459,7 +1525,6 @@ Moves the anchor to the opposite end of the selection."
 Spaces are inserted before the start of each region."
   (interactive)
   (when (evm-active-p)
-    (evm--push-undo-snapshot)
     ;; Find max column based on region starts
     (let ((max-col 0))
       (dolist (region (evm-state-regions evm--state))
@@ -1467,13 +1532,15 @@ Spaces are inserted before the start of each region."
           (goto-char (marker-position (evm-region-beg region)))
           (setq max-col (max max-col (current-column)))))
       ;; Add spaces before region starts to align
-      (dolist (region (evm--regions-by-position-reverse))
-        (save-excursion
-          (goto-char (marker-position (evm-region-beg region)))
-          (let ((spaces-needed (- max-col (current-column))))
-            (when (> spaces-needed 0)
-              (insert (make-string spaces-needed ?\s)))))))
-    (evm--update-all-overlays)))
+      (evm--with-undo-amalgamate
+        (evm--with-batched-changes
+          (dolist (region (evm--regions-by-position-reverse))
+            (save-excursion
+              (goto-char (marker-position (evm-region-beg region)))
+              (let ((spaces-needed (- max-col (current-column))))
+                (when (> spaces-needed 0)
+                  (insert (make-string spaces-needed ?\s))))))))
+      (evm--finalize-batch-edit))))
 
 ;;; Run at Cursors commands
 
@@ -1483,7 +1550,6 @@ If CMD is nil, prompt for input."
   (interactive
    (list (read-string "Normal command: ")))
   (when (and (evm-active-p) (not (string-empty-p cmd)))
-    (evm--push-undo-snapshot)
     ;; Temporarily disable evm keymaps to use original evil bindings
     (let ((saved-alist evm--emulation-alist))
       (setq evm--emulation-alist nil)
@@ -1502,7 +1568,6 @@ If CMD is nil, prompt for input."
     (let ((macro (evil-get-register register t)))
       (unless macro
         (user-error "Register '%c' is empty" register))
-      (evm--push-undo-snapshot)
       ;; Temporarily disable evm keymaps to use original evil bindings
       (let ((saved-alist evm--emulation-alist))
         (setq evm--emulation-alist nil)
@@ -1519,7 +1584,6 @@ If CMD is nil, prompt for input."
   (interactive
    (list (read-string ": " nil 'evil-ex-history)))
   (when (and (evm-active-p) (not (string-empty-p cmd)))
-    (evm--push-undo-snapshot)
     (evm--run-command-at-cursors
      (lambda ()
        (evil-ex-execute cmd)))))
@@ -1529,10 +1593,9 @@ If CMD is nil, prompt for input."
 Processes from end to beginning to preserve positions.
 If UPDATE-POSITIONS is non-nil, update cursor positions to point after FN.
 Updates overlays after execution."
-  (let* ((regions (evm--regions-by-position-reverse))
-         (inhibit-modification-hooks t)
-         (handle (prepare-change-group)))
-    (evm--without-post-command-hook
+  (let ((regions (evm--regions-by-position-reverse))
+        (handle (prepare-change-group)))
+    (evm--with-batched-changes
       (dolist (region regions)
         (goto-char (evm--region-cursor-pos region))
         (condition-case err
@@ -1545,13 +1608,7 @@ Updates overlays after execution."
            (message "Error at cursor %d: %s"
                     (evm-region-index region) (error-message-string err))))))
     (undo-amalgamate-change-group handle))
-  ;; Clamp and update after all changes
-  (evm--clamp-markers)
-  (evm--check-and-merge-overlapping)
-  (evm--update-all-overlays)
-  ;; Move to leader
-  (when-let ((leader (evm--leader-region)))
-    (goto-char (evm--region-cursor-pos leader))))
+  (evm--finalize-batch-edit))
 
 (defun evm-toggle-restrict ()
   "Toggle restriction for evm search.
@@ -1606,22 +1663,20 @@ FN is called with point at each cursor, from end to beginning.
 If UPDATE-MARKERS is non-nil, update each cursor's marker to point
 after FN completes (useful for commands like o/O that move point)."
   (let ((regions (evm--regions-by-position-reverse)))
-    (dolist (region regions)
-      (if update-markers
-          ;; Don't use save-excursion - we want to capture the new position
-          (progn
+    (evm--with-batched-changes
+      (dolist (region regions)
+        (if update-markers
+            ;; Don't use save-excursion - we want to capture the new position
+            (progn
+              (goto-char (evm--region-cursor-pos region))
+              (funcall fn)
+              ;; Update marker to new position
+              (evm--region-set-cursor-pos region (point)))
+          ;; Original behavior with save-excursion
+          (save-excursion
             (goto-char (evm--region-cursor-pos region))
-            (funcall fn)
-            ;; Update marker to new position
-            (evm--region-set-cursor-pos region (point)))
-        ;; Original behavior with save-excursion
-        (save-excursion
-          (goto-char (evm--region-cursor-pos region))
-          (funcall fn)))))
-  (evm--update-all-overlays)
-  ;; Move to leader
-  (when-let ((leader (evm--leader-region)))
-    (goto-char (evm--region-cursor-pos leader))))
+            (funcall fn))))))
+  (evm--finalize-batch-edit))
 
 ;;; Operator infrastructure (d/c/y with motions)
 
@@ -1766,7 +1821,7 @@ Returns (BEG END) or nil if motion failed."
                            ((or ?\( ?\) ?b) (if inner-p (evil-inner-paren) (evil-a-paren)))
                            ((or ?\[ ?\]) (if inner-p (evil-inner-bracket) (evil-a-bracket)))
                            ((or ?{ ?} ?B) (if inner-p (evil-inner-curly) (evil-a-curly)))
-                           ((or ?< ?>) (if inner-p (evil-inner-angle) (evil-a-angle)))
+                           ((or ?< ?>) (if inner-p (evil-inner-angle) (evil-an-angle)))
                            (?\" (if inner-p (evil-inner-double-quote) (evil-a-double-quote)))
                            (?\' (if inner-p (evil-inner-single-quote) (evil-a-single-quote)))
                            (?\` (if inner-p (evil-inner-back-quote) (evil-a-back-quote)))
@@ -2409,7 +2464,7 @@ Moves cursor to leader position after resync."
     (setf (evm-state-regions evm--state) nil)
     (clrhash (evm-state-region-by-id evm--state))
     ;; Handle both old format (list of cons) and new format (plist)
-    (if (plistp last)
+    (if (keywordp (car-safe last))
         ;; New format with mode
         (let ((mode (plist-get last :mode))
               (positions (plist-get last :positions))
@@ -2486,30 +2541,30 @@ REGISTER is a character. AFTER determines position."
            (contents (gethash reg (evm-state-registers evm--state))))
       (unless contents
         (user-error "Register '%c' is empty" register))
-      (evm--push-undo-snapshot)
       (let* ((sorted-regions (evm--regions-by-position))
              (num-regions (length sorted-regions))
              (num-contents (length contents)))
-        ;; If in extend mode, delete first
-        (when (evm-extend-mode-p)
-          (dolist (region (evm--regions-by-position-reverse))
-            (delete-region (marker-position (evm-region-beg region))
-                           (marker-position (evm-region-end region)))))
-        ;; Insert content
-        (cl-loop for region in sorted-regions
-                 for idx from 0
-                 for content = (cond
-                                ((= num-contents num-regions)
-                                 (nth idx contents))
-                                ((= num-contents 1)
-                                 (car contents))
-                                (t
-                                 (nth (mod idx num-contents) contents)))
-                 do (save-excursion
-                      (goto-char (marker-position (evm-region-beg region)))
-                      (when after
-                        (forward-char 1))
-                      (insert content)))
+        (evm--with-batched-changes
+          ;; If in extend mode, delete first
+          (when (evm-extend-mode-p)
+            (dolist (region (evm--regions-by-position-reverse))
+              (delete-region (marker-position (evm-region-beg region))
+                             (marker-position (evm-region-end region)))))
+          ;; Insert content
+          (cl-loop for region in sorted-regions
+                   for idx from 0
+                   for content = (cond
+                                  ((= num-contents num-regions)
+                                   (nth idx contents))
+                                  ((= num-contents 1)
+                                   (car contents))
+                                  (t
+                                   (nth (mod idx num-contents) contents)))
+                   do (save-excursion
+                        (goto-char (marker-position (evm-region-beg region)))
+                        (when after
+                          (forward-char 1))
+                        (insert content))))
         ;; After paste, cursor should be on last inserted char (like evil)
         ;; beg marker is now at end of inserted text, move back by 1
         (dolist (region sorted-regions)
@@ -2519,11 +2574,7 @@ REGISTER is a character. AFTER determines position."
               (set-marker (evm-region-end region) (1- pos))
               (set-marker (evm-region-anchor region) (1- pos))))))
       (setf (evm-state-mode evm--state) 'cursor)
-      (evm--update-all-overlays)
-      (evm--update-keymap)
-      ;; Sync point to leader position
-      (when-let ((leader (evm--leader-region)))
-        (goto-char (evm--region-visual-cursor-pos leader)))
+      (evm--finalize-batch-edit t)
       (message "Pasted from register '%c'" register))))
 
 (defun evm-delete-to-register (register)
@@ -2533,9 +2584,8 @@ REGISTER is a character. AFTER determines position."
     ;; First yank to register
     (evm-yank-to-register register)
     ;; Then delete
-    (let ((inhibit-modification-hooks t)
-          (regions (evm--regions-by-position-reverse)))
-      (dolist (region regions)
+    (evm--with-batched-changes
+      (dolist (region (evm--regions-by-position-reverse))
         (delete-region (marker-position (evm-region-beg region))
                        (marker-position (evm-region-end region)))))
     (evm--clamp-markers)
@@ -2552,6 +2602,10 @@ When enabled, allows search patterns to span multiple lines."
   (when evm--state
     (setf (evm-state-multiline-p evm--state)
           (not (evm-state-multiline-p evm--state)))
+    (when-let ((pattern (car (evm-state-patterns evm--state))))
+      (if (evm--restrict-active-p)
+          (evm--show-match-preview-restricted pattern)
+        (evm--show-match-preview pattern)))
     (message "Multiline mode: %s"
              (if (evm-state-multiline-p evm--state) "ON" "OFF"))))
 
@@ -2717,12 +2771,15 @@ Reads old and new surround characters and changes the pair around each cursor."
 ;;; Global keybindings for activation
 
 ;;;###autoload
-(defun evm-setup-global-keys ()
+(defun evm-setup-global-keys (&optional old-leader-key)
   "Setup global keybindings for evm activation.
 Uses `evm-leader-key' for prefix bindings."
-  ;; Remove conflicting global bindings
-  (global-unset-key (kbd "<C-down>"))
-  (global-unset-key (kbd "<C-up>"))
+  (when (and old-leader-key
+             (not (string= old-leader-key evm-leader-key)))
+    (evm--unbind-leader-bindings evil-normal-state-map old-leader-key
+                                 evm--normal-leader-suffixes)
+    (evm--unbind-leader-bindings evil-visual-state-map old-leader-key
+                                 evm--visual-leader-suffixes))
   ;; Use define-key directly on evil state maps for reliable binding
   (define-key evil-normal-state-map (kbd "C-n") #'evm-find-word)
   (define-key evil-normal-state-map (kbd "<C-down>") #'evm-add-cursor-down)
@@ -2739,8 +2796,10 @@ Uses `evm-leader-key' for prefix bindings."
   "Rebind all leader-prefixed keys after changing `evm-leader-key'.
 Call this after setting a new leader key."
   (interactive)
-  (evm--setup-leader-bindings)
-  (evm-setup-global-keys))
+  (let ((old-leader-key evm--previous-leader-key))
+    (evm--setup-leader-bindings old-leader-key)
+    (evm-setup-global-keys old-leader-key)
+    (setq evm--previous-leader-key evm-leader-key)))
 
 (provide 'evm)
 ;;; evm.el ends here

@@ -6,7 +6,7 @@
 ;;; Commentary:
 
 ;; Core module for evil-visual-multi.
-;; Provides data structures (evm-region, evm-state, evm-snapshot),
+;; Provides data structures (evm-region, evm-state),
 ;; cursor/overlay management, and basic operations.
 
 ;;; Code:
@@ -16,6 +16,7 @@
 
 ;; Forward declaration for function defined in evm.el
 (declare-function evm--update-keymap "evm" ())
+(defvar evm--last-buffer-tick)
 
 ;;; Custom group
 
@@ -110,19 +111,11 @@ In extend mode: beg <= end, anchor is fixed."
   multiline-p     ; allow multiline regions
   whole-word-p    ; search whole words
   case-fold-p     ; ignore case in search
-  undo-snapshots  ; list of snapshots for undo
   last-regions    ; saved positions for reselect
   registers       ; hash-table: char -> list of strings
   restrict-beg    ; start of restricted region (marker or nil)
   restrict-end    ; end of restricted region (marker or nil)
   restrict-overlay) ; overlay for restricted region visualization
-
-(cl-defstruct evm-snapshot
-  "Snapshot for undo/redo."
-  regions-data    ; list of (id beg-pos end-pos anchor-pos dir)
-  leader-id       ; leader ID at snapshot time
-  mode            ; mode at snapshot time
-  buffer-tick)    ; buffer-modified-tick for validation
 
 ;;; Buffer-local state
 
@@ -570,6 +563,7 @@ Like vim-visual-multi: when direction is forward, cursor goes to beginning."
       (set-marker (evm-region-end region) cursor-pos)
       (set-marker (evm-region-anchor region) cursor-pos)))
   (evm--update-all-overlays)
+  (setq evm--last-buffer-tick (buffer-modified-tick))
   (evm--update-keymap))
 
 (defun evm--enter-extend-mode ()
@@ -583,6 +577,7 @@ Like vim-visual-multi: when direction is forward, cursor goes to beginning."
                     (min (1+ pos) (point-max)))
         (setf (evm-region-dir region) 1))))
   (evm--update-all-overlays)
+  (setq evm--last-buffer-tick (buffer-modified-tick))
   (evm--update-keymap))
 
 (defun evm-toggle-mode ()
@@ -772,56 +767,27 @@ Cursor lands one position after the character."
           (forward-char 1)  ; land one after the match
         (goto-char start)))))
 
-;;; Undo support
-
-(defun evm--push-undo-snapshot ()
-  "Save current state for undo."
-  (let ((snapshot (make-evm-snapshot
-                   :regions-data
-                   (mapcar (lambda (r)
-                             (list (evm-region-id r)
-                                   (marker-position (evm-region-beg r))
-                                   (marker-position (evm-region-end r))
-                                   (marker-position (evm-region-anchor r))
-                                   (evm-region-dir r)))
-                           (evm-state-regions evm--state))
-                   :leader-id (evm-state-leader-id evm--state)
-                   :mode (evm-state-mode evm--state)
-                   :buffer-tick (buffer-modified-tick))))
-    (push snapshot (evm-state-undo-snapshots evm--state))))
-
-(defun evm--restore-from-snapshot (snapshot)
-  "Restore state from SNAPSHOT."
-  (evm--remove-all-overlays)
-  ;; Clear current regions
-  (dolist (region (evm-state-regions evm--state))
-    (set-marker (evm-region-beg region) nil)
-    (set-marker (evm-region-end region) nil)
-    (set-marker (evm-region-anchor region) nil))
-  (setf (evm-state-regions evm--state) nil)
-  (clrhash (evm-state-region-by-id evm--state))
-  ;; Restore from snapshot
-  (let ((ht (evm-state-region-by-id evm--state)))
-    (dolist (data (evm-snapshot-regions-data snapshot))
-      (cl-destructuring-bind (id beg end anchor dir) data
-        (let ((region (make-evm-region
-                       :id id
-                       :beg (evm--make-marker beg)
-                       :end (evm--make-marker end)
-                       :anchor (evm--make-marker anchor)
-                       :dir dir)))
-          (puthash id region ht)
-          (push region (evm-state-regions evm--state))))))
-  (setf (evm-state-leader-id evm--state) (evm-snapshot-leader-id snapshot))
-  (setf (evm-state-mode evm--state) (evm-snapshot-mode snapshot))
-  (evm--sort-regions)
-  (evm--update-region-indices)
-  (evm--update-all-overlays))
-
 ;;; Match preview (for pattern search)
 
 (defvar-local evm--match-overlays nil
   "List of temporary overlays for match preview.")
+
+(defun evm--match-spans-lines-p (beg end)
+  "Return t when the match from BEG to END crosses a line boundary."
+  (and (> end beg)
+       (save-excursion
+         (goto-char beg)
+         (re-search-forward "\n" end t))))
+
+(defun evm--match-allowed-p (beg end)
+  "Return t if the match from BEG to END is allowed by current filters."
+  (let ((bounds (evm--restrict-bounds))
+        (multiline-p (and evm--state (evm-state-multiline-p evm--state))))
+    (and (or (null bounds)
+             (and (>= beg (car bounds))
+                  (<= end (cdr bounds))))
+         (or multiline-p
+             (not (evm--match-spans-lines-p beg end))))))
 
 (defun evm--show-match-preview (pattern)
   "Show preview of all matches for PATTERN."
@@ -829,11 +795,14 @@ Cursor lands one position after the character."
   (save-excursion
     (goto-char (point-min))
     (while (re-search-forward pattern nil t)
-      (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
-        (overlay-put ov 'face 'evm-match-face)
-        (overlay-put ov 'evm-match t)
-        (overlay-put ov 'priority 50)
-        (push ov evm--match-overlays)))))
+      (let ((beg (match-beginning 0))
+            (end (match-end 0)))
+        (when (evm--match-allowed-p beg end)
+          (let ((ov (make-overlay beg end)))
+            (overlay-put ov 'face 'evm-match-face)
+            (overlay-put ov 'evm-match t)
+            (overlay-put ov 'priority 50)
+            (push ov evm--match-overlays)))))))
 
 (defun evm--show-match-preview-restricted (pattern)
   "Show preview of matches for PATTERN within current restriction."
@@ -842,12 +811,14 @@ Cursor lands one position after the character."
     (save-excursion
       (goto-char (if bounds (car bounds) (point-min)))
       (while (re-search-forward pattern (when bounds (cdr bounds)) t)
-        (when (evm--point-in-restrict-p (match-beginning 0))
-          (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
-            (overlay-put ov 'face 'evm-match-face)
-            (overlay-put ov 'evm-match t)
-            (overlay-put ov 'priority 50)
-            (push ov evm--match-overlays)))))))
+        (let ((beg (match-beginning 0))
+              (end (match-end 0)))
+          (when (evm--match-allowed-p beg end)
+            (let ((ov (make-overlay beg end)))
+              (overlay-put ov 'face 'evm-match-face)
+              (overlay-put ov 'evm-match t)
+              (overlay-put ov 'priority 50)
+              (push ov evm--match-overlays))))))))
 
 (defun evm--hide-match-preview ()
   "Hide match preview overlays."
@@ -886,6 +857,18 @@ Cursor lands one position after the character."
         (e2 (marker-position (evm-region-end r2))))
     (and (< b1 e2) (< b2 e1))))
 
+(defun evm--regions-mergeable-p (r1 r2)
+  "Return t if R1 and R2 should be merged.
+This merges genuinely overlapping regions, plus duplicate point
+cursors at the exact same position."
+  (or (evm--regions-overlap-p r1 r2)
+      (and (= (marker-position (evm-region-beg r1))
+              (marker-position (evm-region-end r1)))
+           (= (marker-position (evm-region-beg r2))
+              (marker-position (evm-region-end r2)))
+           (= (marker-position (evm-region-beg r1))
+              (marker-position (evm-region-beg r2))))))
+
 (defun evm--check-and-merge-overlapping ()
   "Check for overlapping regions and merge them.
 Uses O(n) algorithm: sort first, then single-pass merge of adjacent regions."
@@ -901,13 +884,21 @@ Uses O(n) algorithm: sort first, then single-pass merge of adjacent regions."
             (current (car regions)))
         ;; Single pass: merge adjacent overlapping regions
         (dolist (next (cdr regions))
-          (let ((cur-end (marker-position (evm-region-end current)))
-                (next-beg (marker-position (evm-region-beg next))))
-            (if (<= next-beg cur-end)
+          (let ((cur-end (marker-position (evm-region-end current))))
+            (if (evm--regions-mergeable-p current next)
                 ;; Overlap: extend current, delete next
                 (progn
                   (set-marker (evm-region-end current)
                               (max cur-end (marker-position (evm-region-end next))))
+                  (when (and (evm-state-leader-id evm--state)
+                             (= (evm-state-leader-id evm--state)
+                                (evm-region-id next)))
+                    (setf (evm-state-leader-id evm--state)
+                          (evm-region-id current)))
+                  (setf (evm-region-txt current)
+                        (buffer-substring-no-properties
+                         (marker-position (evm-region-beg current))
+                         (marker-position (evm-region-end current))))
                   ;; Clean up next region
                   (remhash (evm-region-id next) ht)
                   (when (evm-region-overlay next)

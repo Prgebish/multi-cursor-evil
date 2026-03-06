@@ -107,32 +107,23 @@
   - [x] 11.3 Оптимизация производительности
   - [ ] 11.4 Финальная документация
 
-- [ ] Phase 12: Interactive Tutorial (demo/)
-  Интерактивный учебник: каждый файл — самодостаточный урок.
-  Пользователь открывает файл в Emacs, читает объяснения и практикуется
-  прямо в нём на подготовленных текстовых примерах.
+- [x] Phase 12: Manual Verification Assets
+  - [x] Собран набор интерактивных упражнений для ручной проверки
+  - [x] Покрыты создание курсоров, режимы, редактирование, регистры, surround, restriction и history/recovery
 
-  - [x] 12.1  `demo/01-find-word.txt` — C-n, visual C-n, add next, n/N, q/Q, \ A, сценарий переименования
-  - [x] 12.2  `demo/02-cursors-vertical.txt` — C-Down / C-Up, создание колонки курсоров
-  - [x] 12.3  `demo/03-visual-cursors.txt` — \ c из visual-line, visual-block, visual-char
-  - [x] 12.4  `demo/04-cursor-extend-modes.txt` — Tab переключение, extend y/d/c, flip (o)
-  - [x] 12.5  `demo/05-movements.txt` — h/j/k/l, w/b/e, 0/^/$ во всех курсорах
-  - [x] 12.6  `demo/06-insert-mode.txt` — i/a/I/A/o/O с real-time replication
-  - [x] 12.7  `demo/07-delete-change-yank.txt` — d/c/y + motions, dd/cc/yy, D/C/Y
-  - [x] 12.8  `demo/08-text-objects.txt` — diw, ci", da), ya>, dit и т.д.
-  - [x] 12.9  `demo/09-quick-edits.txt` — x/X, r, ~, J (join lines)
-  - [x] 12.10 `demo/10-indent.txt` — >>/<< , >j, >ip, <ip
-  - [x] 12.11 `demo/11-case-operators.txt` — gu/gU/g~ + motions, extend U/u/~
-  - [x] 12.12 `demo/12-registers.txt` — VM registers, "a prefix, p/P, распределение по курсорам
-  - [x] 12.13 `demo/13-surround.txt` — S (extend), ys+motion, ds, cs
-  - [x] 12.14 `demo/14-align.txt` — \ a (align cursors)
-  - [x] 12.15 `demo/15-run-at-cursors.txt` — \ z (normal cmd), \ @ (macro), \ : (ex cmd)
-  - [x] 12.16 `demo/16-restrict.txt` — \ r (restrict search to visual region)
-  - [x] 12.17 `demo/17-undo-redo.txt` — u / C-r, \ g S (reselect last)
+- [ ] Phase 13: Package Tutorial (`tutorial/`)
+  Цель: собрать официальный tutorial пакета в директории `tutorial/`.
+
+  - [x] 13.1 Аудит имеющихся упражнений и сценариев
+    - [x] Найти повторы базовых объяснений и служебного текста
+    - [x] Отметить сильные практические примеры, которые стоит сохранить
+    - [x] Выделить темы, которые можно оставить отдельными файлами
+
 
 ## Blocked / Open Questions
 - [ ] Название пакета: evil-visual-multi? evm? multi-cursor-evil?
 - [ ] Лицензия: GPL-3+?
+- [ ] Держать ли VM registers и surround в основной части tutorial или сделать их "advanced editing" appendix?
 
 ## Decisions Made
 - Два режима (cursor/extend) — да
@@ -142,9 +133,23 @@
 - C-f/C-b навигация — нет (отложили)
 - Transpose, Duplicate, Shift, Split, Filter, Transform, Numbering — нет (отложили)
 - Hydra/Transient меню — нет (отложили)
+- Tutorial должен быть организован по workflows, а не по принципу "одна команда = один файл"
+- Повторяющиеся инструкции tutorial нужно вынести в отдельный стартовый файл
+- `\ g S` уместен рядом с undo/redo только если файл оформлен как history/recovery, а не как чистый undo reference
+- `tutorial/` — единственный официальный tutorial пакета
 
 ## Status
-**Phase 11.3** — Оптимизация производительности завершена.
+**Phase 13.6** — Tutorial записан в `tutorial/`; дальше нужна ручная проверка и правка по результатам прохода.
+
+### Planned Tutorial Structure
+- Part 0 — `tutorial/00-start-here.txt`
+  Общие правила tutorial: как запускать упражнения, как выходить из EVM, как читать записи вроде `\ a` и `\ g S`, какие зависимости опциональны.
+- Part I — создание курсоров и навигация
+  `tutorial/01-03`: search-based creation, structural creation, переключение `cursor/extend`, motions и навигация по существующим курсорам.
+- Part II — редактирование
+  `tutorial/04-08`: insert/quick edits, operators/text objects, layout/case, registers, surround.
+- Part III — appendix / advanced workflows
+  `tutorial/09-11`: fallback execution, scoped search, history/recovery.
 
 ### Оптимизации производительности (11.3)
 - Overlay updates: переиспользование через `move-overlay` вместо пересоздания
@@ -198,4 +203,7 @@
 ## Files
 - `task_plan.md` — этот файл
 - `architecture.md` — структура решения
+- `features.md` — живое описание возможностей пакета и tutorial coverage
+- `AGENTS.md` — инструкции для следующих сессий и verification commands
+- `tutorial/` — новая компактная версия tutorial
 - `notes.md` — лог ошибок и решений

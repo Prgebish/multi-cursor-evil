@@ -45,7 +45,7 @@ Record the macro first, then use \ @ to replay it.
   1. Cursor on "x" line 1 below
   2. Record macro: qa, then A;, Esc, q
   3. u to undo (macro stays in register a)
-  4. C-Down twice (3 cursors)
+  4. Cursor anywhere on line 1, C-Down twice (3 cursors)
   5. \ @ then a -- macro replayed at all cursors
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -79,6 +79,9 @@ C-Up goes upward. Column is preserved even through short
 lines (cursor lands at EOL on short lines, but remembers
 the target column).
 
+Shift-click (s-mouse-1) adds a cursor at the click position.
+If a cursor already exists there, it is removed instead.
+
 > Place cursor on the first character of "alpha" below,
   press C-Down four times. 5 cursors in a column.
 
@@ -88,17 +91,6 @@ the target column).
   charlie
   delta
   echo
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-> Place cursor on "1" of "10" below, press C-Down four
-  times. Cursors land on the first digit of each number.
-
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  width   = 10
-  height  = 20
-  depth   = 30
-  margin  = 40
-  padding = 50
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -150,17 +142,6 @@ Tab switches between them.
 Cursor -> extend: each point becomes a 1-char selection.
 Extend -> cursor: selections collapse to points.
 
-> C-n on "slot" below, add 3 matches. You're in extend mode.
-  Press Tab -- selections collapse (cursor mode).
-  Press Tab again -- 1-char selections (extend mode).
-
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  slot = "Alice"
-  print(slot)
-  slot = "Bob"
-  print(slot)
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 > Extend mode d/c/y (no motion needed):
   C-n on "old" below, press n once. Press d -- both deleted.
 
@@ -208,69 +189,3 @@ moves ALL cursors simultaneously. In extend mode, motions
 grow or shrink selections instead.
 
 o flips the active end of a selection (like evil visual o).
-
-> Place cursor at column 0 line 1 below, C-Down twice.
-  Press f= -- all cursors jump to "=".
-  Press l l -- cursors on the first digit of each value.
-
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  nick: Aspen
-  rank: elite
-  clan: Forge
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-> Extend mode motions -- C-n on first char of line 1 below,
-  C-Down twice. Press Tab (extend), then e -- selection
-  covers the first word. Press $ -- selection to end of line.
-
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  addr = 0.0.0.0
-  proto = tcp
-  tier = staging
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-
-Lesson 8: Putting It All Together
------------------------------------
-
-Add "export " prefix and ";" suffix to each line:
-
-> 1. Place cursor anywhere on line 1 below
-  2. C-Down three times (4 cursors)
-  3. I -- insert at line start. Type "export "
-  4. Esc (stay in evm)
-  5. A -- append at line end. Type ";"
-  6. Esc, Esc
-
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  const alpha = 1
-  const bravo = 2
-  const charlie = 3
-  const delta = 4
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-  Expected:
-  export const alpha = 1;
-  export const bravo = 2;
-  export const charlie = 3;
-  export const delta = 4;
-
-Rename and wrap values:
-
-> 1. C-n on "srv" below, then n twice (3 matches, extend mode)
-  2. c, type "server", Esc (cursor mode, still in evm)
-  3. f= l l -- cursors on the values
-  4. Tab, $ -- extend mode, selections to end of line
-  5. S " -- surround with quotes (requires evil-surround)
-  6. Esc
-
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  srv = alpha
-  srv = bravo
-  srv = charlie
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-  Expected:
-  server = "alpha"
-  server = "bravo"
-  server = "charlie"

@@ -35,6 +35,8 @@ Backspace also works at all cursors.
 > Wrap values in quotes (two insert passes):
   Place cursor on "r" of "red" below, C-Down twice.
   Press i, type ", Esc. Press e (end of word), a, type ", Esc.
+  (Disable electric-pair-mode first, or the closing quote
+  will be inserted automatically.)
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   color: red
@@ -137,8 +139,9 @@ Extend mode: d/c/y act directly on selections.
   Text objects find boundaries automatically -- the cursor
   just needs to be somewhere inside the delimiters.
 
-> Change quoted strings: cursor inside "red", C-Down twice,
-  ci", type "blue", Esc.
+> Change quoted strings: cursor inside "red", C-Down twice.
+  Press ci" -- type blue -- press Esc. (The " after ci is the
+  text object delimiter, not a typo.)
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   color = "red"
@@ -161,9 +164,9 @@ entries 1-to-1:
   3 cursors yank "a","b","c" -> register = ["a","b","c"]
   3 cursors paste -> cursor 1 gets "a", 2 gets "b", 3 gets "c"
 
-  p / P         -- paste after / before cursor
-  "ay / "ap     -- yank to / paste from named register 'a'
-  "Ay           -- append to register 'a'
+  p / P              -- paste after / before cursor
+  " + a + y/p        -- yank to / paste from named register a
+  " + A (uppercase)  -- append to existing register a
 
 If register has 1 entry and N cursors: broadcast (same value
 everywhere). If register has fewer entries than cursors:
@@ -172,7 +175,7 @@ values cycle.
 > Copy sizes into the function call:
   1. Cursor on "1" of "10" line 1, C-Down twice, yiw
   2. Esc to exit evm
-  3. C-n on "0" in "size(0, 0, 0)", press \ A
+  3. C-n on "0" in "size(0, 0, 0)", press n twice
   4. p -- each "0" replaced with its value
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -218,7 +221,7 @@ Indent (cursor mode):
   >j / <k       -- indent / outdent current + adjacent line
   >ip / <ip     -- indent / outdent inner paragraph
 
-Align:
+Align (works in both cursor and extend mode):
   \ a           -- insert spaces to align all cursors at
                    the rightmost column
 
@@ -248,7 +251,7 @@ Align:
       print("c")
 
 > Align equal signs:
-  Cursor on "a" line 1, C-Down twice, f= then \ a.
+  C-n on "=" line 1, n twice, Tab (cursor mode), \ a.
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   a = 1
@@ -374,47 +377,3 @@ Spacing: ( [ { add spaces inside, ) ] } don't.
   msg = hello
   msg = world
   msg = test
-
-
-Lesson 8: Putting It All Together
------------------------------------
-
-Navigate to values, delete them, and paste new ones:
-
-> 1. Cursor on "a" of "alpha" line 1, C-Down twice
-  2. yiw -- yank ["alpha", "bravo", "charlie"]
-  3. f: l l -- jump to the value after ": "
-  4. C (= c$) -- delete to EOL, insert mode
-  5. Esc (stay in evm, cursor mode)
-  6. p -- paste yanked words after cursor
-
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  alpha: old
-  bravo: old
-  charlie: old
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-  Expected:
-  alpha: alpha
-  bravo: bravo
-  charlie: charlie
-
-Surround, align, and replace in one session:
-
-> 1. Cursor on "f" of "foo" line 1, C-Down twice
-  2. ysiw` -- surround words with backticks
-  3. 0 f= -- jump to "="
-  4. \ a -- align equal signs
-  5. r: -- replace "=" with ":"
-  6. Esc
-
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  name = foo
-  longer_name = bar
-  x = baz
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-  Expected:
-  name        : `foo`
-  longer_name : `bar`
-  x           : `baz`

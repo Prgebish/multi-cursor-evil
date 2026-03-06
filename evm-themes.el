@@ -71,7 +71,12 @@ Can be `underline', `background', or nil to disable."
   :type '(choice (const :tag "Underline" underline)
                  (const :tag "Background" background)
                  (const :tag "None" nil))
-  :group 'evm)
+  :group 'evm
+  :set (lambda (sym val)
+         (set-default sym val)
+         (when (and (boundp 'evm-theme)
+                    (fboundp 'evm-load-theme))
+           (evm-load-theme evm-theme))))
 
 ;;; Theme loading
 
@@ -88,6 +93,26 @@ If THEME is `default', reset to default face definitions."
       (if theme-fn
           (funcall theme-fn)
         (message "Unknown theme: %s" theme)))))
+
+(defun evm--set-match-face (match-bg &optional match-ul)
+  "Apply match highlighting using MATCH-BG and MATCH-UL.
+The exact style is controlled by `evm-highlight-matches'."
+  (pcase evm-highlight-matches
+    ('underline
+     (set-face-attribute 'evm-match-face nil
+                         :background 'unspecified
+                         :foreground 'unspecified
+                         :underline (or match-ul t)))
+    ('background
+     (set-face-attribute 'evm-match-face nil
+                         :background (or match-bg 'unspecified)
+                         :foreground 'unspecified
+                         :underline nil))
+    (_
+     (set-face-attribute 'evm-match-face nil
+                         :background 'unspecified
+                         :foreground 'unspecified
+                         :underline nil))))
 
 (defun evm--set-faces (cursor-bg cursor-fg region-bg region-fg
                                   leader-cursor-bg leader-cursor-fg
@@ -116,10 +141,7 @@ MATCH-BG, MATCH-UL: match face background and underline."
                       :background leader-region-bg
                       :foreground (or leader-region-fg 'unspecified))
   ;; Match face
-  (when match-bg
-    (set-face-attribute 'evm-match-face nil
-                        :background match-bg
-                        :underline match-ul)))
+  (evm--set-match-face match-bg match-ul))
 
 ;;; Theme definitions
 
@@ -142,10 +164,11 @@ MATCH-BG, MATCH-UL: match face background and underline."
                       :background (if (eq (frame-parameter nil 'background-mode) 'dark)
                                       "#854D0E" "#FEF08A")
                       :foreground 'unspecified)
-  (set-face-attribute 'evm-match-face nil
-                      :background (if (eq (frame-parameter nil 'background-mode) 'dark)
-                                      "#374151" "#E5E7EB")
-                      :underline t))
+  (evm--set-match-face
+   (if (eq (frame-parameter nil 'background-mode) 'dark)
+       "#374151"
+     "#E5E7EB")
+   t))
 
 ;; Dark themes
 
@@ -294,15 +317,21 @@ Useful for previewing themes interactively."
       (evm-load-theme theme)
       (message "EVM theme: %s" theme))))
 
-;;; Auto-load theme on colorscheme change
+;;; Keep evm faces in sync with Emacs theme changes
 
-(defun evm--on-color-theme-change ()
-  "Reload evm theme when Emacs color theme changes."
+(defun evm--after-theme-change (&rest _)
+  "Reload `evm-theme' after an Emacs theme change."
   (when (and (boundp 'evm-theme) evm-theme)
     (evm-load-theme evm-theme)))
 
-;; Hook into theme changes
-(add-hook 'after-load-theme-hook #'evm--on-color-theme-change)
+(unless (advice-member-p #'evm--after-theme-change 'load-theme)
+  (advice-add 'load-theme :after #'evm--after-theme-change))
+
+(unless (advice-member-p #'evm--after-theme-change 'enable-theme)
+  (advice-add 'enable-theme :after #'evm--after-theme-change))
+
+(unless (advice-member-p #'evm--after-theme-change 'disable-theme)
+  (advice-add 'disable-theme :after #'evm--after-theme-change))
 
 (provide 'evm-themes)
 ;;; evm-themes.el ends here
