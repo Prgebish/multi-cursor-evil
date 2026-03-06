@@ -124,11 +124,11 @@
   - [x] 12.10 `demo/10-indent.txt` — >>/<< , >j, >ip, <ip
   - [x] 12.11 `demo/11-case-operators.txt` — gu/gU/g~ + motions, extend U/u/~
   - [x] 12.12 `demo/12-registers.txt` — VM registers, "a prefix, p/P, распределение по курсорам
-  - [ ] 12.13 `demo/13-surround.txt` — S (extend), ys+motion, ds, cs
-  - [ ] 12.14 `demo/14-align.txt` — \ a (align cursors)
-  - [ ] 12.15 `demo/15-run-at-cursors.txt` — \ z (normal cmd), \ @ (macro), \ : (ex cmd)
-  - [ ] 12.16 `demo/16-restrict.txt` — \ r (restrict search to visual region)
-  - [ ] 12.17 `demo/17-undo-redo.txt` — u / C-r, \ g S (reselect last)
+  - [x] 12.13 `demo/13-surround.txt` — S (extend), ys+motion, ds, cs
+  - [x] 12.14 `demo/14-align.txt` — \ a (align cursors)
+  - [x] 12.15 `demo/15-run-at-cursors.txt` — \ z (normal cmd), \ @ (macro), \ : (ex cmd)
+  - [x] 12.16 `demo/16-restrict.txt` — \ r (restrict search to visual region)
+  - [x] 12.17 `demo/17-undo-redo.txt` — u / C-r, \ g S (reselect last)
 
 ## Blocked / Open Questions
 - [ ] Название пакета: evil-visual-multi? evm? multi-cursor-evil?

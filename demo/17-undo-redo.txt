@@ -1,0 +1,150 @@
+EVM Tutorial 17: Undo, Redo, and Reselect
+============================================
+
+u and C-r work in cursor mode to undo/redo changes
+while keeping all cursors synchronized. After exiting
+evm, \ g S brings back the last cursor positions.
+
+  u      = undo last change (cursor mode only)
+  C-r    = redo last undo (cursor mode only)
+  \ g S  = reselect last cursors/regions
+
+Note: in extend mode, u is lowercase (not undo).
+Switch to cursor mode with Tab first.
+
+
+Lesson 1: Undo (u)
+---------------------
+
+u undoes the last change and resyncs all cursors to
+their correct positions.
+
+> Try it: replace a character, then undo.
+  1. Place cursor on "a" of "alpha" on line 1 below
+  2. Press C-Down twice (3 cursors)
+  3. Press rx — first char replaced with x at all cursors
+  4. Press u — all chars restored
+  5. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha = 1
+  bravo = 2
+  charlie = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected after step 3:
+  xlpha = 1
+  xravo = 2
+  xharlie = 3
+
+  Expected after step 4 (u):
+  alpha = 1
+  bravo = 2
+  charlie = 3
+
+  Single u undoes the replace at all cursors at once.
+
+
+Lesson 2: Redo (C-r)
+-----------------------
+
+C-r redoes the last undone change. Like u, it resyncs
+cursors afterward.
+
+> Try it: replace, undo, then redo.
+  1. Place cursor on "1" on line 1 below
+  2. Press C-Down twice (3 cursors on values)
+  3. Press r0 — all values replaced with 0
+  4. Press u — values restored to 1, 2, 3
+  5. Press C-r — values back to 0 again
+  6. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  val = 1
+  val = 2
+  val = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  u and C-r can be repeated: press u multiple times
+  to undo further back, C-r to redo forward.
+
+
+Lesson 3: Reselect Last (\ g S)
+----------------------------------
+
+After exiting evm, \ g S brings back the last cursor
+positions. This works from normal mode — evm reactivates
+with the saved positions and mode.
+
+Useful when you finish one edit and then realize you
+need another change at the same positions.
+
+> Try it: edit, exit, then reselect and edit again.
+  1. Place cursor on "1" on line 1 below
+  2. Press C-Down twice (3 cursors on values)
+  3. Press r0 — all values replaced with 0
+  4. Press Esc — exit evm (cursors disappear)
+  5. Press \ g S — cursors restored at same positions
+  6. Press r5 — all values replaced with 5
+  7. Press Esc when done
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  x = 1
+  y = 2
+  z = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  After step 3:       After step 6:
+  x = 0               x = 5
+  y = 0               y = 5
+  z = 0               z = 5
+
+  \ g S restores both positions and mode (cursor or
+  extend) from the previous session.
+
+
+Lesson 4: Undo as Safety Net
+-------------------------------
+
+Use undo freely during multi-cursor editing. If a
+change goes wrong, u brings everything back so you
+can retry.
+
+> Try it: make a mistake, undo, and correct it.
+  1. Place cursor on "name" on line 1 below, press C-n
+  2. Press n twice (3 matches)
+  3. Press Tab to switch to cursor mode
+  4. Press dw — deletes too much (word + space)
+  5. Press u — undo, text restored
+  6. Press ciw, type key, Esc — correct change
+  7. Press Esc when done (u to undo)
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = 1
+  name = 2
+  name = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  After step 4 (dw — too much):
+  = 1
+  = 2
+  = 3
+
+  After step 5 (u):
+  name = 1
+  name = 2
+  name = 3
+
+  After step 6 (ciw — correct):
+  key = 1
+  key = 2
+  key = 3
+
+  Quick reference:
+    u       undo last change (cursor mode)
+    C-r     redo last undo (cursor mode)
+    \ g S   reselect last cursors (from normal mode)
+    Undo resyncs cursors to pattern matches automatically
+
+
+That's it for Tutorial 17!

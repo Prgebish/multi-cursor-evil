@@ -1530,7 +1530,8 @@ Processes from end to beginning to preserve positions.
 If UPDATE-POSITIONS is non-nil, update cursor positions to point after FN.
 Updates overlays after execution."
   (let* ((regions (evm--regions-by-position-reverse))
-         (inhibit-modification-hooks t))
+         (inhibit-modification-hooks t)
+         (handle (prepare-change-group)))
     (evm--without-post-command-hook
       (dolist (region regions)
         (goto-char (evm--region-cursor-pos region))
@@ -1542,7 +1543,8 @@ Updates overlays after execution."
                 (evm--region-set-cursor-pos region (point))))
           (error
            (message "Error at cursor %d: %s"
-                    (evm-region-index region) (error-message-string err)))))))
+                    (evm-region-index region) (error-message-string err))))))
+    (undo-amalgamate-change-group handle))
   ;; Clamp and update after all changes
   (evm--clamp-markers)
   (evm--check-and-merge-overlapping)
