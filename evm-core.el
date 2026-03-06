@@ -366,7 +366,7 @@ because it sorts once and creates overlays in batch."
   (evm--create-cursor-in-region-overlay region))
 
 (defun evm--create-cursor-in-region-overlay (region)
-  "Create cursor overlay within region (shows active end)."
+  "Create cursor overlay within REGION to show the active end."
   (let* ((cursor-pos (if (= (evm-region-dir region) 1)
                          (1- (marker-position (evm-region-end region)))
                        (marker-position (evm-region-beg region))))
@@ -716,7 +716,7 @@ This function is called with point already at the region's cursor position."
 
 (defun evm--move-find-char (char count)
   "Move to COUNT-th occurrence of CHAR on current line (like evil f).
-Cursor lands ON the character."
+COUNT defaults to 1.  Cursor lands ON the character."
   (let ((case-fold-search nil)
         (target (char-to-string char))
         (start (point)))
@@ -730,7 +730,7 @@ Cursor lands ON the character."
 
 (defun evm--move-find-char-to (char count)
   "Move to one before COUNT-th occurrence of CHAR (like evil t).
-Cursor lands one position before the character."
+COUNT defaults to 1.  Cursor lands one position before the character."
   (let ((case-fold-search nil)
         (target (char-to-string char))
         (start (point)))
@@ -744,7 +744,7 @@ Cursor lands one position before the character."
 
 (defun evm--move-find-char-backward (char count)
   "Move backward to COUNT-th occurrence of CHAR (like evil F).
-Cursor lands ON the character."
+COUNT defaults to 1.  Cursor lands ON the character."
   (let ((case-fold-search nil)
         (target (char-to-string char))
         (start (point)))
@@ -756,7 +756,7 @@ Cursor lands ON the character."
 
 (defun evm--move-find-char-to-backward (char count)
   "Move to one after COUNT-th occurrence of CHAR backward (like evil T).
-Cursor lands one position after the character."
+COUNT defaults to 1.  Cursor lands one position after the character."
   (let ((case-fold-search nil)
         (target (char-to-string char))
         (start (point)))

@@ -43,7 +43,7 @@ All changes in BODY become a single undo entry."
        (undo-amalgamate-change-group undo-handle))))
 
 (defmacro evm--without-post-command-hook (&rest body)
-  "Execute BODY with post-command-hook temporarily disabled."
+  "Execute BODY with `post-command-hook' temporarily disabled."
   (declare (indent 0) (debug t))
   `(progn
      (remove-hook 'post-command-hook #'evm--post-command t)
@@ -144,7 +144,8 @@ it is unbound first to allow prefix bindings."
     (define-key keymap (kbd (concat leader-key " " suffix)) nil)))
 
 (defun evm--setup-leader-bindings (&optional old-leader-key)
-  "Set up all leader-prefixed bindings in evm keymaps."
+  "Set up all leader-prefixed bindings in evm keymaps.
+OLD-LEADER-KEY, if non-nil, is the previous leader key to unbind."
   (when (and old-leader-key
              (not (string= old-leader-key evm-leader-key)))
     (evm--unbind-leader-bindings evm-mode-map old-leader-key
@@ -374,10 +375,10 @@ Used to prevent infinite recursion.")
 Markers have nil insertion type so they stay at the insert-start position.")
 
 (defvar-local evm--insert-orig-positions nil
-  "Alist of (region-id . integer) recording the original position of each cursor
-when insert mode began.  Unlike `evm--insert-start-markers' (which adjust
-when text is deleted before them), these stay fixed and allow detecting
-backward deletions (backspace past the insert point).")
+  "Alist of (region-id . integer) for original cursor positions.
+Unlike `evm--insert-start-markers' (which adjust when text is deleted
+before them), these stay fixed and allow detecting backward deletions
+\(backspace past the insert point).")
 
 (defvar-local evm--insert-replicated-len 0
   "Length of text currently replicated at non-leader cursors.
@@ -694,9 +695,9 @@ In normal state, cursor can't be past the last character of a non-empty line."
 
 (defun evm--resync-regions-to-pattern ()
   "Resync region positions to match pattern occurrences in buffer.
-Called after undo to fix marker drift.
-Only moves a region if there's a match very close to its current position
-\(within the length of the match pattern). This prevents jumping to distant
+Called after undo to fix marker drift.  Only moves a region if
+there's a match very close to its current position (within the
+length of the match pattern).  This prevents jumping to distant
 matches when text hasn't been fully restored by undo."
   (let* ((pattern (car (evm-state-patterns evm--state)))
          (bounds (evm--restrict-bounds))
@@ -1380,7 +1381,8 @@ Also syncs to evil registers for interoperability."
 
 (defun evm-paste-after ()
   "Paste VM register after cursor positions.
-In extend mode, replaces selected regions. In cursor mode, inserts after cursor."
+In extend mode, replaces selected regions.
+In cursor mode, inserts after cursor."
   (interactive)
   (when (evm-active-p)
     (evm--paste-impl t)))
@@ -1394,10 +1396,10 @@ In cursor mode, inserts before cursor."
     (evm--paste-impl nil)))
 
 (defun evm--paste-impl (after)
-  "Paste implementation. AFTER determines position (t=after cursor, nil=before).
-Uses `evil-this-register' if set (via \"a prefix), otherwise default register.
+  "Paste implementation.  AFTER determine position (t=after, nil=before).
+Uses `evil-this-register' if set (via \\\"a prefix), otherwise default register.
 Falls back to evil registers if VM register is empty.
-In extend mode, replaces selected regions. In cursor mode, inserts at cursor."
+In extend mode, replaces selected regions.  In cursor mode, inserts at cursor."
   (let* ((register (or evil-this-register ?\"))
          ;; Normalize uppercase to lowercase for lookup
          (lookup-reg (if (and (>= register ?A) (<= register ?Z))
@@ -1614,7 +1616,7 @@ Updates overlays after execution."
 
 (defun evm-toggle-restrict ()
   "Toggle restriction for evm search.
-If in evil visual mode: set pending restriction for next C-n.
+If in evil visual mode: set pending restriction for next activation.
 If evm active with restriction: clear it."
   (interactive)
   (cond
@@ -2539,7 +2541,7 @@ Also syncs to evil registers for interoperability."
 
 (defun evm-paste-from-register (register &optional after)
   "Paste from REGISTER at all cursor positions.
-REGISTER is a character. AFTER determines position."
+REGISTER is a character.  AFTER determines position."
   (interactive "cPaste from register: ")
   (when (evm-active-p)
     (let* ((reg (if (and (>= register ?A) (<= register ?Z))
@@ -2629,10 +2631,10 @@ When enabled, allows search patterns to span multiple lines."
 
 (defun evm-surround (char)
   "Surround all regions with CHAR.
-Works in extend mode. Reads a surround character and wraps all regions."
+Works in extend mode.  Reads a surround character and wraps all regions."
   (interactive (list (read-char "Surround with: ")))
   (unless (evm--surround-available-p)
-    (user-error "evil-surround is not loaded"))
+    (user-error "Evil-surround is not loaded"))
   (when (evm-extend-mode-p)
     (evm--with-undo-amalgamate
       (let ((regions (evm--regions-by-position-reverse))
@@ -2654,7 +2656,7 @@ COUNT is optional prefix argument.
 Examples: ysiw\" (surround word with \"), ys$) (surround to eol with parens)."
   (interactive "P")
   (unless (evm--surround-available-p)
-    (user-error "evil-surround is not loaded"))
+    (user-error "Evil-surround is not loaded"))
   (when (evm-cursor-mode-p)
     (message "[EVM] ys")
     (evm--run-surround-operator count)))
@@ -2717,7 +2719,7 @@ PREFIX-COUNT is an optional count from prefix argument."
 Reads a surround character and deletes the pair around each cursor."
   (interactive)
   (unless (evm--surround-available-p)
-    (user-error "evil-surround is not loaded"))
+    (user-error "Evil-surround is not loaded"))
   (when (evm-cursor-mode-p)
     (message "[EVM] ds")
     (let ((char (read-char "Delete surround: ")))
@@ -2745,7 +2747,7 @@ Reads a surround character and deletes the pair around each cursor."
 Reads old and new surround characters and changes the pair around each cursor."
   (interactive)
   (unless (evm--surround-available-p)
-    (user-error "evil-surround is not loaded"))
+    (user-error "Evil-surround is not loaded"))
   (when (evm-cursor-mode-p)
     (message "[EVM] cs")
     (let ((old-char (read-char "Change surround: ")))
@@ -2779,7 +2781,8 @@ Reads old and new surround characters and changes the pair around each cursor."
 
 ;;;###autoload
 (defun evm-setup-global-keys (&optional old-leader-key)
-  "Setup global keybindings for evm activation.
+  "Set up global keybindings for evm activation.
+OLD-LEADER-KEY, if non-nil, is the previous leader key to unbind.
 Uses `evm-leader-key' for prefix bindings."
   (when (and old-leader-key
              (not (string= old-leader-key evm-leader-key)))
