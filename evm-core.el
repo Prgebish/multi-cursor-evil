@@ -963,4 +963,7 @@ Uses O(n) algorithm: sort first, then single-pass merge of adjacent regions."
     t))
 
 (provide 'evm-core)
+;; Local Variables:
+;; package-lint-main-file: "evm.el"
+;; End:
 ;;; evm-core.el ends here

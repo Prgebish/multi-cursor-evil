@@ -334,4 +334,7 @@ Useful for previewing themes interactively."
   (advice-add 'disable-theme :after #'evm--after-theme-change))
 
 (provide 'evm-themes)
+;; Local Variables:
+;; package-lint-main-file: "evm.el"
+;; End:
 ;;; evm-themes.el ends here

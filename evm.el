@@ -6,7 +6,7 @@
 ;; Author: Vadim Pavlov <vadim198527@gmail.com>
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1") (evil "1.14.0"))
-;; Keywords: evil, multiple-cursors, editing
+;; Keywords: convenience, emulations
 ;; URL: https://github.com/chestnykh/multi-cursor-evil
 
 ;;; Commentary:
@@ -285,7 +285,8 @@ Uses `emulation-mode-map-alists' to override evil bindings."
 
 (defun evm--regions-by-position-reverse ()
   "Return regions sorted by buffer position (end to beginning).
-Use this for buffer modifications to avoid position shifts affecting earlier regions."
+Use this for buffer modifications to avoid position shifts
+affecting earlier regions."
   (sort (copy-sequence (evm-state-regions evm--state))
         (lambda (a b)
           (> (evm--region-cursor-pos a)
@@ -1386,7 +1387,8 @@ In extend mode, replaces selected regions. In cursor mode, inserts after cursor.
 
 (defun evm-paste-before ()
   "Paste VM register before cursor positions.
-In extend mode, replaces selected regions. In cursor mode, inserts before cursor."
+In extend mode, replaces selected regions.
+In cursor mode, inserts before cursor."
   (interactive)
   (when (evm-active-p)
     (evm--paste-impl nil)))
@@ -2221,7 +2223,8 @@ Examples: >j (indent 2 lines), >> (indent current line), >ip (indent paragraph).
 (defun evm-operator-outdent (count)
   "Outdent operator: wait for motion, then outdent at all cursors.
 COUNT is optional prefix argument.
-Examples: <j (outdent 2 lines), << (outdent current line), <ip (outdent paragraph)."
+Examples: <j (outdent 2 lines), << (outdent current line),
+<ip (outdent paragraph)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] <")
@@ -2271,7 +2274,8 @@ CASE-FN is \\='upcase-region, \\='downcase-region, or \\='evm--toggle-case-regio
   "Run case change operator with motion.
 CASE-FN is the case function to apply.
 PREFIX-COUNT is optional count from prefix argument.
-LINE-CHAR is the character that triggers line operation (u for guu, U for gUU, ~ for g~~)."
+LINE-CHAR is the character that triggers a line operation:
+u for guu, U for gUU, and ~ for g~~."
   (let ((motion (evm--parse-motion line-char)))
     (unless motion
       (message "Cancelled")
@@ -2305,7 +2309,8 @@ LINE-CHAR is the character that triggers line operation (u for guu, U for gUU, ~
 (defun evm-operator-downcase (count)
   "Downcase operator: wait for motion, then lowercase at all cursors.
 COUNT is optional prefix argument.
-Examples: guw (lowercase word), guiw (lowercase inner word), guu (lowercase line)."
+Examples: guw (lowercase word), guiw (lowercase inner word),
+guu (lowercase line)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] gu")
@@ -2314,7 +2319,8 @@ Examples: guw (lowercase word), guiw (lowercase inner word), guu (lowercase line
 (defun evm-operator-upcase (count)
   "Upcase operator: wait for motion, then uppercase at all cursors.
 COUNT is optional prefix argument.
-Examples: gUw (uppercase word), gUiw (uppercase inner word), gUU (uppercase line)."
+Examples: gUw (uppercase word), gUiw (uppercase inner word),
+gUU (uppercase line)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] gU")
@@ -2323,7 +2329,8 @@ Examples: gUw (uppercase word), gUiw (uppercase inner word), gUU (uppercase line
 (defun evm-operator-toggle-case (count)
   "Toggle case operator: wait for motion, then toggle case at all cursors.
 COUNT is optional prefix argument.
-Examples: g~w (toggle case word), g~iw (toggle case inner word), g~~ (toggle case line)."
+Examples: g~w (toggle case word), g~iw (toggle case inner word),
+g~~ (toggle case line)."
   (interactive "P")
   (when (evm-cursor-mode-p)
     (message "[EVM] g~")
