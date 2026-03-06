@@ -1,0 +1,420 @@
+EVM Guide 02: Editing
+======================
+
+All editing commands act at every cursor simultaneously.
+Cursor mode (C) and extend mode (E) have different behavior
+for some operations -- differences are noted where relevant.
+
+
+Lesson 1: Insert Mode (i / a / I / A / o / O)
+-----------------------------------------------
+
+Insert mode works from cursor mode. What you type appears
+at ALL cursors. Esc returns to cursor mode (not exiting evm).
+
+  i / a  -- insert before / after cursor
+  I / A  -- insert at line start / line end
+  o / O  -- open line below / above
+
+Backspace also works at all cursors.
+
+> Add type annotations: place cursor on "x" of "x_pos"
+  below, C-Down twice, press i, type "int ", Esc.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  x_pos = 0
+  y_pos = 0
+  z_pos = 0
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  int x_pos = 0
+  int y_pos = 0
+  int z_pos = 0
+
+> Wrap values in quotes (two insert passes):
+  Place cursor on "r" of "red" below, C-Down twice.
+  Press i, type ", Esc. Press e (end of word), a, type ", Esc.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  color: red
+  color: green
+  color: blue
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  color: "red"
+  color: "green"
+  color: "blue"
+
+
+Lesson 2: Quick Edits (x / r / ~ / J)
+----------------------------------------
+
+Single-key edits. No motion, no insert mode.
+
+  x   -- delete char under cursor (count: 3x)
+  X   -- delete char before cursor
+  r   -- replace char (prompts for new char)
+  ~   -- toggle case (1 char in cursor mode, region in extend)
+  J   -- join line with the next one
+
+> Convert arrays to sets and strip semicolons:
+  Place cursor on "d" of "data" line 1, C-Down twice.
+  f[ r{ f] r} l x
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  data = [a, b, c];
+  data = [d, e, f];
+  data = [g, h, i];
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  data = {a, b, c}
+  data = {d, e, f}
+  data = {g, h, i}
+
+> Join split assignments:
+  C-n on "let" below, add all 3 matches, Tab (cursor mode).
+  Press J -- each line joined with its continuation.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  let name =
+      "Alice"
+  let email =
+      "alice@test.com"
+  let role =
+      "admin"
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  let name = "Alice"
+  let email = "alice@test.com"
+  let role = "admin"
+
+
+Lesson 3: Operators and Text Objects (d / c / y)
+--------------------------------------------------
+
+Cursor mode: operators wait for a motion or text object.
+  dw  diw  d$  dd  D    -- delete
+  cw  ciw  c$  cc  C    -- change (delete + insert)
+  yw  yiw  y$  yy  Y    -- yank (copy to register)
+
+Counts work: d3w, 2dd, 3dw.
+
+Extend mode: d/c/y act directly on selections.
+
+> Delete "const" keyword: cursor on "c" of "const" line 1,
+  C-Down twice, press dw.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  const width = 10
+  const height = 20
+  const depth = 30
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  width = 10
+  height = 20
+  depth = 30
+
+> Change function arguments with text objects:
+  Cursor inside parens on line 1, C-Down twice, press ci(,
+  type "data", Esc.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  validate(user_id, "admin")
+  validate(user_id, "editor")
+  validate(user_id, "viewer")
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  validate(data)
+  validate(data)
+  validate(data)
+
+  Text objects find boundaries automatically -- the cursor
+  just needs to be somewhere inside the delimiters.
+
+> Change quoted strings: cursor inside "red", C-Down twice,
+  ci", type "blue", Esc.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  color = "red"
+  color = "green"
+  color = "yellow"
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  color = "blue"
+  color = "blue"
+  color = "blue"
+
+
+Lesson 4: Registers and Paste
+-------------------------------
+
+EVM registers store one entry per cursor. Paste distributes
+entries 1-to-1:
+
+  3 cursors yank "a","b","c" -> register = ["a","b","c"]
+  3 cursors paste -> cursor 1 gets "a", 2 gets "b", 3 gets "c"
+
+  p / P         -- paste after / before cursor
+  "ay / "ap     -- yank to / paste from named register 'a'
+  "Ay           -- append to register 'a'
+
+If register has 1 entry and N cursors: broadcast (same value
+everywhere). If register has fewer entries than cursors:
+values cycle.
+
+> Copy sizes into the function call:
+  1. Cursor on "1" of "10" line 1, C-Down twice, yiw
+  2. Esc to exit evm
+  3. C-n on "0" in "size(0, 0, 0)", press \ A
+  4. p -- each "0" replaced with its value
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  width  = 10
+  height = 20
+  depth  = 30
+
+  size(0, 0, 0)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  width  = 10
+  height = 20
+  depth  = 30
+
+  size(10, 20, 30)
+
+> Yank names, paste into template:
+  1. Cursor on "Alice" line 1, C-Down twice, yiw, Esc
+  2. C-n on "___" line 5, press n twice, p
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Alice
+  Bob
+  Carol
+
+  Hello, ___!
+  Hello, ___!
+  Hello, ___!
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  Hello, Alice!
+  Hello, Bob!
+  Hello, Carol!
+
+
+Lesson 5: Indent and Align
+----------------------------
+
+Indent (cursor mode):
+  >> / <<       -- indent / outdent current line
+  >j / <k       -- indent / outdent current + adjacent line
+  >ip / <ip     -- indent / outdent inner paragraph
+
+Align:
+  \ a           -- insert spaces to align all cursors at
+                   the rightmost column
+
+> Indent function bodies:
+  C-n on "print" below, add all 3, Tab (cursor mode).
+  Press >> -- print lines indented.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  if check_a():
+  print("a")
+
+  if check_b():
+  print("b")
+
+  if check_c():
+  print("c")
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected (tab-width 4):
+  if check_a():
+      print("a")
+
+  if check_b():
+      print("b")
+
+  if check_c():
+      print("c")
+
+> Align equal signs:
+  Cursor on "a" line 1, C-Down twice, f= then \ a.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  a = 1
+  bb = 2
+  ccc = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  a   = 1
+  bb  = 2
+  ccc = 3
+
+> Align then replace: same setup, after \ a press r: to
+  change "=" to ":" at all cursors.
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  a = 10
+  bb = 200
+  ccc = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  a   : 10
+  bb  : 200
+  ccc : 3
+
+
+Lesson 6: Case Conversion
+---------------------------
+
+Cursor mode (operator + motion):
+  gUiw / guw / g~iw  -- uppercase / lowercase / toggle word
+  gUU / guu / g~~    -- whole line
+  gU$ / gu0          -- to line boundary
+
+Extend mode (direct on selections):
+  U / u / ~           -- uppercase / lowercase / toggle
+
+Note: in extend mode, u is lowercase (not undo). To undo,
+switch to cursor mode with Tab first.
+
+> Uppercase constants: cursor on "m" of "max_size" line 1,
+  C-Down twice, press gU$ (uppercase to end of line).
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  max_size = 100
+  max_count = 50
+  max_depth = 10
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  MAX_SIZE = 100
+  MAX_COUNT = 50
+  MAX_DEPTH = 10
+
+> Extend mode: C-n on "ok" below, add all 3 matches.
+  Press U -- selections uppercased to "OK".
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  status = ok
+  status = ok
+  status = ok
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  status = OK
+  status = OK
+  status = OK
+
+
+Lesson 7: Surround (requires evil-surround)
+---------------------------------------------
+
+Extend mode:
+  S + char           -- wrap each selection with pair
+
+Cursor mode:
+  ys + motion + char -- wrap motion target with pair
+  yss + char         -- wrap entire line
+  ds + char          -- delete surrounding pair
+  cs + old + new     -- change surrounding pair
+
+Spacing: ( [ { add spaces inside, ) ] } don't.
+
+> Wrap words with quotes: cursor on "alpha" line 1,
+  C-Down twice, press ysiw" (ys=surround, iw=word, "=char).
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha
+  bravo
+  gamma
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  "alpha"
+  "bravo"
+  "gamma"
+
+> Change double quotes to single: cursor inside "x" line 1,
+  C-Down twice, press cs"' (change " to ').
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  key = "x"
+  key = "y"
+  key = "z"
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  key = 'x'
+  key = 'y'
+  key = 'z'
+
+> Remove quotes: cursor inside "hello" line 1, C-Down twice,
+  press ds" (delete surrounding ").
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  msg = "hello"
+  msg = "world"
+  msg = "test"
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  msg = hello
+  msg = world
+  msg = test
+
+
+Lesson 8: Putting It All Together
+-----------------------------------
+
+Navigate to values, delete them, and paste new ones:
+
+> 1. Cursor on "a" of "alpha" line 1, C-Down twice
+  2. yiw -- yank ["alpha", "bravo", "charlie"]
+  3. f: l l -- jump to the value after ": "
+  4. C (= c$) -- delete to EOL, insert mode
+  5. Esc (stay in evm, cursor mode)
+  6. p -- paste yanked words after cursor
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha: old
+  bravo: old
+  charlie: old
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  alpha: alpha
+  bravo: bravo
+  charlie: charlie
+
+Surround, align, and replace in one session:
+
+> 1. Cursor on "f" of "foo" line 1, C-Down twice
+  2. ysiw` -- surround words with backticks
+  3. 0 f= -- jump to "="
+  4. \ a -- align equal signs
+  5. r: -- replace "=" with ":"
+  6. Esc
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = foo
+  longer_name = bar
+  x = baz
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  name        : `foo`
+  longer_name : `bar`
+  x           : `baz`

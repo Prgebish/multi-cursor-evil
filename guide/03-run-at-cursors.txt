@@ -1,0 +1,94 @@
+EVM Guide 03: Run at Cursors
+==============================
+
+These commands execute a normal command, macro, or ex
+command at every cursor position. Useful for operations
+that go beyond standard cursor mode replication.
+
+  \ z  = run normal command at all cursors
+  \ @  = run macro (from register) at all cursors
+  \ :  = run ex command at all cursor lines
+
+
+Lesson 1: Run Normal Command (\ z)
+-------------------------------------
+
+\ z prompts for a key sequence, then executes it as a
+normal mode command at each cursor position.
+
+> Uppercase the word at each cursor:
+  1. Cursor on "a" of "alice" line 1, C-Down twice
+  2. \ z -- prompt: "Normal command: "
+  3. Type gUiw, press Enter -- words uppercased
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = alice
+  name = bob
+  name = carol
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  name = ALICE
+  name = BOB
+  name = CAROL
+
+
+Lesson 2: Run Macro (\ @)
+----------------------------
+
+\ @ prompts for a register character, then replays the
+macro from that register at every cursor position.
+
+Record the macro first, then use \ @ to replay it.
+
+> Add semicolons using a recorded macro:
+  1. Cursor on "x" line 1 below
+  2. Record macro: qa, then A;, Esc, q
+  3. u to undo (macro stays in register a)
+  4. C-Down twice (3 cursors)
+  5. \ @ then a -- macro replayed at all cursors
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  x = 1
+  y = 2
+  z = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  x = 1;
+  y = 2;
+  z = 3;
+
+
+Lesson 3: Run Ex Command (\ :)
+---------------------------------
+
+\ : prompts for an ex command, then runs it at each
+cursor's line. Only cursor lines are affected.
+
+> Rename keyword on specific lines:
+  1. C-n on "calc" below, add all 3 matches, Tab
+  2. \ : -- type s/calc/compute/ and press Enter
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  result = calc(1)
+  other = 42
+  result = calc(2)
+  label = ok
+  result = calc(3)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  result = compute(1)
+  other = 42
+  result = compute(2)
+  label = ok
+  result = compute(3)
+
+  Lines without cursors (2 and 4) stay unchanged.
+  Compare with :%s/calc/compute/g which changes everything.
+
+  Quick reference:
+    \ z    run normal command at all cursors
+    \ @    run macro from register at all cursors
+    \ :    run ex command at all cursor lines

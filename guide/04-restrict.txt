@@ -1,0 +1,105 @@
+EVM Guide 04: Restrict Search Region
+======================================
+
+By default, C-n and n search the entire buffer. The
+restrict command limits the search to a specific region.
+
+  \ r  = toggle restriction (set or clear)
+
+Set: select a region in visual mode, then press \ r.
+Clear: press \ r while evm is active with a restriction.
+The restricted area is highlighted with an overlay.
+
+
+Lesson 1: Restrict Before Search
+-----------------------------------
+
+> Change "old" only in the first block:
+  1. Cursor on "name" line 1 below
+  2. V then jj -- visual select lines 1-3
+  3. \ r -- restriction set (area highlighted)
+  4. Cursor on "old" on any restricted line
+  5. C-n, then n twice (3 matches, only in block 1)
+  6. c, type "new", Esc
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = old
+  value = old
+  count = old
+
+  name = old
+  value = old
+  count = old
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected (only first block changed):
+  name = new
+  value = new
+  count = new
+
+  name = old
+  value = old
+  count = old
+
+
+Lesson 2: Clear Restriction (\ r)
+------------------------------------
+
+Press \ r again (without visual selection) while evm is
+active to clear the restriction. After clearing, n finds
+matches in the entire buffer again.
+
+> 1. Cursor on "x" line 1 below
+  2. V then j -- visual select lines 1-2
+  3. \ r -- restriction set
+  4. C-n on "x" line 1, press n -- only 1 more match (line 2)
+  5. \ r -- restriction cleared (highlight removed)
+  6. n -- now finds "x" on lines 3-4 too
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  x = 1
+  x = 2
+  x = 3
+  x = 4
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Lesson 3: Practical Workflow
+-------------------------------
+
+Rename a variable in one function without touching the rest.
+
+> Rename "data" to "result" in process() only:
+  1. Cursor on "data" in "data = fetch()" below
+  2. Vjj -- visual select the 3 body lines of process()
+  3. \ r -- restriction set
+  4. C-n on "data", then n twice (3 matches in process)
+  5. c, type "result", Esc
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def process():
+      data = fetch()
+      print(data)
+      return data
+
+  def backup():
+      data = read_all()
+      print(data)
+      return data
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Expected:
+  def process():
+      result = fetch()
+      print(result)
+      return result
+
+  def backup():
+      data = read_all()
+      print(data)
+      return data
+
+  Quick reference:
+    \ r in visual mode  = set restriction
+    \ r in evm mode     = clear restriction
+    Restriction limits C-n, n, and N searches

@@ -1,0 +1,81 @@
+EVM Guide 05: Undo, Redo, and Reselect
+========================================
+
+  u      = undo last change (cursor mode only)
+  C-r    = redo last undo (cursor mode only)
+  \ g S  = reselect last cursors (from normal mode)
+
+Note: in extend mode, u is lowercase (not undo).
+Switch to cursor mode with Tab first.
+
+
+Lesson 1: Undo and Redo
+--------------------------
+
+u undoes the last change and resyncs all cursors.
+C-r redoes it. Both can be repeated.
+
+> Replace, undo, redo:
+  1. Cursor on "a" of "alpha" line 1, C-Down twice
+  2. rx -- first char replaced with x at all cursors
+  3. u -- all chars restored
+  4. C-r -- back to x again
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alpha = 1
+  bravo = 2
+  charlie = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  After rx:    xlpha, xravo, xharlie
+  After u:     alpha, bravo, charlie (restored)
+  After C-r:   xlpha, xravo, xharlie (redone)
+
+
+Lesson 2: Reselect Last (\ g S)
+----------------------------------
+
+After exiting evm, \ g S brings back the last cursor
+positions. Useful when you finish one edit and realize
+you need another change at the same spots.
+
+> Edit, exit, reselect, edit again:
+  1. Cursor on "1" line 1, C-Down twice
+  2. r0 -- all values become 0
+  3. Esc -- exit evm
+  4. \ g S -- cursors restored at same positions
+  5. r5 -- all values become 5
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  x = 1
+  y = 2
+  z = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  \ g S restores both positions and mode (cursor or extend).
+
+
+Lesson 3: Undo as Safety Net
+-------------------------------
+
+Make a mistake, undo, try again -- all within one session.
+
+> 1. C-n on "name" below, add all 3, Tab (cursor mode)
+  2. dw -- oops, deletes word + space (too much)
+  3. u -- text restored, cursors still active
+  4. ciw, type "key", Esc -- correct change this time
+
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  name = 1
+  name = 2
+  name = 3
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  After dw:    "= 1", "= 2", "= 3" (too much deleted)
+  After u:     "name = 1" etc. (restored)
+  After ciw:   "key = 1", "key = 2", "key = 3" (correct)
+
+  Quick reference:
+    u       undo (cursor mode)
+    C-r     redo (cursor mode)
+    \ g S   reselect last cursors (from normal mode)
