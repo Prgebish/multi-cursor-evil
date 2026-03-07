@@ -4,9 +4,7 @@
 
 Multiple cursors for evil-mode, inspired by [[https://github.com/mg979/vim-visual-multi][vim-visual-multi]].
 
-#+BEGIN_EXPORT html
-<video src="https://github.com/Prgebish/multi-cursor-evil/releases/download/v0.1.0-demo/kap1.mp4" autoplay loop muted playsinline width="600"></video>
-#+END_EXPORT
+[[file:demo/demo.gif]]
 
 * Features
 
