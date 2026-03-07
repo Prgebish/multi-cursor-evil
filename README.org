@@ -258,6 +258,10 @@ Open any file in Emacs and follow the exercises directly in the buffer.
 
 Inspired by [[https://github.com/mg979/vim-visual-multi][vim-visual-multi]] by mg979.
 
+* Support
+
+If you find =evm= useful, consider giving it a star --- it helps others discover the project.
+
 * License
 
 MIT
