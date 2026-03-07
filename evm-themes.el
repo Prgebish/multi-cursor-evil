@@ -1,7 +1,7 @@
 ;;; evm-themes.el --- Theming system for evil-visual-multi -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
-;; SPDX-License-Identifier: GPL-3.0-or-later
+;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
 

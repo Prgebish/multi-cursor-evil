@@ -1,0 +1,263 @@
+#+TITLE: Evil Visual Multi (evm)
+#+AUTHOR: Vadim Pavlov
+#+OPTIONS: toc:3
+
+Multiple cursors for evil-mode, inspired by [[https://github.com/mg979/vim-visual-multi][vim-visual-multi]].
+
+#+HTML: <video src="demo/kap1.mp4" autoplay loop muted playsinline width="600"></video>
+
+* Features
+
+- Two modes: *cursor mode* (point cursors, operators need motions) and *extend mode* (selections, operators act directly)
+- Leader cursor with distinct highlighting
+- Per-cursor registers for yank/paste (1-to-1 distribution)
+- Evil movements, text objects, and operators at all cursors
+- evil-surround integration (=S=, =ys=, =ds=, =cs=)
+- Run normal commands, macros, or ex commands at all cursors
+- Restriction: limit search to a region
+- Undo/redo with automatic cursor resync
+- Theme-aware faces with auto-adaptation
+
+* Installation
+
+** MELPA (recommended)
+
+#+begin_src emacs-lisp
+(use-package evm
+  :after evil
+  :config
+  (evm-setup-global-keys))
+#+end_src
+
+** Doom Emacs
+
+In =packages.el=:
+
+#+begin_src emacs-lisp
+(package! evm)
+#+end_src
+
+In =config.el=:
+
+#+begin_src emacs-lisp
+(use-package! evm
+  :after evil
+  :config
+  (evm-setup-global-keys))
+#+end_src
+
+Then run =doom sync= and restart Emacs.
+
+Doom may rebind some keys used by evm (e.g. =C-n=, =C-Down=, =C-Up=).
+If you encounter conflicts, override them in =config.el=:
+
+#+begin_src emacs-lisp
+;; Example: unbind C-n in Doom before evm takes over
+(map! :n "C-n" nil)
+#+end_src
+
+Before the package is on MELPA, install directly from GitHub:
+
+#+begin_src emacs-lisp
+;; packages.el
+(package! evm :recipe (:host github :repo "chestnykh/multi-cursor-evil"))
+#+end_src
+
+** Manual
+
+Clone the repository, add it to =load-path=, and set up keys:
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "/path/to/multi-cursor-evil")
+(require 'evm)
+(evm-setup-global-keys)
+#+end_src
+
+* Quick Start
+
+1. Place cursor on a word, press =C-n= --- the word is selected
+2. Press =n= to add the next match, =q= to skip, =Q= to remove
+3. Press =Tab= to switch between cursor/extend mode
+4. Edit at all cursors: =c=, =d=, =i=, =a=, =r=, etc.
+5. Press =Esc= to exit evm
+
+* Keybindings
+
+The default leader key is =\= (backslash). Customise with =evm-leader-key=.
+
+** Activation (evil normal/visual state)
+
+| Key         | Command                     | Description                       |
+|-------------+-----------------------------+-----------------------------------|
+| =C-n=       | =evm-find-word=             | Select word under cursor, enter evm |
+| =C-Down=    | =evm-add-cursor-down=       | Add cursor on line below          |
+| =C-Up=      | =evm-add-cursor-up=         | Add cursor on line above          |
+| =s-mouse-1= | =evm-add-cursor-at-click=  | Add cursor at click position      |
+| =\ g S=    | =evm-reselect-last=         | Reselect last evm session         |
+| =\ c=      | =evm-visual-cursors=        | Create cursors from visual selection (visual state) |
+| =\ r=      | =evm-toggle-restrict=       | Set restriction from visual selection (visual state) |
+
+** General (active in both modes)
+
+| Key       | Command                 | Description                        |
+|-----------+-------------------------+------------------------------------|
+| =Esc=     | =evm-exit=              | Exit evm                           |
+| =Tab=     | =evm-toggle-mode=       | Toggle cursor/extend mode          |
+| =n=       | =evm-find-next=         | Add next match                     |
+| =N=       | =evm-find-prev=         | Add previous match                 |
+| =]=       | =evm-goto-next=         | Move leader to next cursor         |
+| =[=       | =evm-goto-prev=         | Move leader to previous cursor     |
+| =q=       | =evm-skip-current=      | Skip leader, add next match        |
+| =Q=       | =evm-remove-current=    | Remove leader cursor               |
+| =C-n=     | =evm-add-next-match=    | Add next pattern match             |
+| =s-mouse-1= | =evm-add-cursor-at-click= | Add cursor at click            |
+| =M=       | =evm-toggle-multiline=  | Toggle multiline search            |
+| ="=       | =evil-use-register=     | Select register for next yank/paste |
+
+** Leader-prefixed (\ + key)
+
+| Key     | Command              | Description                            |
+|---------+----------------------+----------------------------------------|
+| =\ A=  | =evm-select-all=     | Select all matches of current pattern  |
+| =\ a=  | =evm-align=          | Align cursors by inserting spaces      |
+| =\ r=  | =evm-toggle-restrict= | Toggle search restriction             |
+| =\ g S= | =evm-reselect-last= | Reselect last evm session             |
+| =\ z=  | =evm-run-normal=     | Run normal command at all cursors      |
+| =\ @=  | =evm-run-macro=      | Run macro from register at all cursors |
+| =\ :=  | =evm-run-ex=         | Run ex command at all cursor lines     |
+
+** Cursor Mode
+
+*** Motions
+
+| Key   | Command                       | Description               |
+|-------+-------------------------------+---------------------------|
+| =h/j/k/l= | =evm-{backward,next,previous,forward}-*= | Basic movement |
+| =w/b/e= | =evm-forward-word= / =backward-word= / =forward-word-end= | Word motions |
+| =0= / =^= / =$= | =evm-beginning-of-line= / =first-non-blank= / =end-of-line= | Line motions |
+| =f/t/F/T= | =evm-find-char*=           | Character search          |
+
+*** Insert
+
+| Key | Command           | Description                |
+|-----+-------------------+----------------------------|
+| =i= | =evm-insert=     | Insert before cursor       |
+| =a= | =evm-append=     | Insert after cursor        |
+| =I= | =evm-insert-line= | Insert at line start      |
+| =A= | =evm-append-line= | Insert at line end        |
+| =o= | =evm-open-below= | Open line below            |
+| =O= | =evm-open-above= | Open line above            |
+
+*** Operators (wait for motion/text object)
+
+| Key   | Command                  | Description              |
+|-------+--------------------------+--------------------------|
+| =d=   | =evm-operator-delete=    | Delete                   |
+| =c=   | =evm-operator-change=    | Change (delete + insert) |
+| =y=   | =evm-operator-yank=      | Yank                     |
+| =D=   | =evm-delete-to-eol=      | Delete to end of line    |
+| =C=   | =evm-change-to-eol=      | Change to end of line    |
+| =Y=   | =evm-yank-line=          | Yank whole line          |
+| =>=   | =evm-operator-indent=    | Indent (=>>=, =>ip=)    |
+| =<=   | =evm-operator-outdent=   | Outdent (=<<=, =<ip=)    |
+| =gu=  | =evm-operator-downcase=  | Lowercase                |
+| =gU=  | =evm-operator-upcase=    | Uppercase                |
+| =g~=  | =evm-operator-toggle-case= | Toggle case            |
+
+*** Quick Edits
+
+| Key | Command                    | Description             |
+|-----+----------------------------+-------------------------|
+| =x= | =evm-delete-char=         | Delete char at cursor   |
+| =X= | =evm-delete-char-backward= | Delete char before cursor |
+| =r= | =evm-replace-char=        | Replace char            |
+| =~= | =evm-toggle-case-char=    | Toggle case (1 char)    |
+| =J= | =evm-join-lines=          | Join with next line     |
+| =v= | =evm-enter-extend=        | Enter extend mode       |
+
+*** Paste and Undo
+
+| Key   | Command            | Description           |
+|-------+--------------------+-----------------------|
+| =p=   | =evm-paste-after=  | Paste after cursor    |
+| =P=   | =evm-paste-before= | Paste before cursor   |
+| =u=   | =evm-undo=         | Undo                  |
+| =C-r= | =evm-redo=        | Redo                  |
+
+** Extend Mode
+
+| Key | Command                        | Description                     |
+|-----+--------------------------------+---------------------------------|
+| =d= | =evm-delete=                   | Delete selections               |
+| =c= | =evm-change=                   | Change selections               |
+| =s= | =evm-change=                   | Change selections (alias)       |
+| =y= | =evm-yank=                     | Yank selections                 |
+| =p= | =evm-paste-after=              | Paste (replaces selections)     |
+| =P= | =evm-paste-before=             | Paste before selections         |
+| =o= | =evm-flip-direction=           | Flip active end of selection    |
+| =U= | =evm-upcase=                   | Uppercase selections            |
+| =u= | =evm-downcase=                 | Lowercase selections            |
+| =~= | =evm-toggle-case=              | Toggle case of selections       |
+| =S= | =evm-surround=                 | Surround selections (evil-surround) |
+| =i= | =evm-extend-inner-text-object= | Extend to inner text object     |
+| =a= | =evm-extend-a-text-object=     | Extend to a text object         |
+
+** Surround (cursor mode, requires evil-surround)
+
+Surround commands are accessed through the standard evil operators:
+
+| Sequence        | Description                    |
+|-----------------+--------------------------------|
+| =ys= + motion + char | Add surround                |
+| =ds= + char    | Delete surround                |
+| =cs= + old + new | Change surround              |
+
+* Configuration
+
+All customizable variables with their defaults:
+
+#+begin_src emacs-lisp
+;; Leader key for prefix commands (\ A, \ a, \ r, \ z, \ @, \ :, \ g S)
+;; Call (evm-rebind-leader) after changing to update keymaps.
+;; Default: "\\"
+(setq evm-leader-key "\\")
+
+;; Color theme for cursor and region overlays.
+;; Values: 'default, 'iceblue, 'ocean, 'neon, 'purplegray, 'nord,
+;;         'codedark, 'spacegray, 'olive, 'sand, 'paper,
+;;         'lightblue1, 'lightblue2, 'lightpurple1, 'lightpurple2
+;; Dark themes:  iceblue, ocean, neon, purplegray, nord, codedark, spacegray, olive, sand
+;; Light themes: lightblue1, lightblue2, lightpurple1, lightpurple2, paper, sand
+;; Default: 'default
+(setq evm-theme 'default)
+
+;; How to highlight other pattern matches in the buffer.
+;; Values: 'underline, 'background, nil (disable)
+;; Default: 'underline
+(setq evm-highlight-matches 'underline)
+
+;; Show EVM[C 1/3] indicator in the mode-line.
+;; Values: t, nil
+;; Default: t
+(setq evm-show-mode-line t)
+#+end_src
+
+* Tutorial
+
+The =guide/= directory contains a hands-on tutorial in 5 parts:
+
+1. =01-cursors-and-navigation.txt= --- creating cursors and moving around
+2. =02-editing.txt= --- insert mode, operators, text objects, registers, surround
+3. =03-run-at-cursors.txt= --- =\ z=, =\ @=, =\ :=
+4. =04-restrict.txt= --- limiting search to a region
+5. =05-undo-and-reselect.txt= --- undo, redo, reselect last session
+
+Open any file in Emacs and follow the exercises directly in the buffer.
+
+* Acknowledgements
+
+Inspired by [[https://github.com/mg979/vim-visual-multi][vim-visual-multi]] by mg979.
+
+* License
+
+MIT

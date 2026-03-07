@@ -1,7 +1,7 @@
 ;;; evm.el --- Evil Visual Multi - Multiple cursors for evil-mode -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
-;; SPDX-License-Identifier: GPL-3.0-or-later
+;; SPDX-License-Identifier: MIT
 
 ;; Author: Vadim Pavlov <vadim198527@gmail.com>
 ;; Version: 0.1.0
@@ -192,6 +192,7 @@ OLD-LEADER-KEY, if non-nil, is the previous leader key to unbind."
 (define-key evm-cursor-map (kbd "C-n") #'evm-add-next-match)
 (define-key evm-cursor-map (kbd "<C-down>") #'evm-add-cursor-down)
 (define-key evm-cursor-map (kbd "<C-up>") #'evm-add-cursor-up)
+(define-key evm-cursor-map (kbd "<s-down-mouse-1>") #'evm--mouse-down-save-point)
 (define-key evm-cursor-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
 ;; Undo (only in cursor mode, extend mode uses u for downcase)
 (define-key evm-cursor-map (kbd "u") #'evm-undo)
@@ -214,6 +215,7 @@ OLD-LEADER-KEY, if non-nil, is the previous leader key to unbind."
 (define-key evm-extend-map (kbd "u") #'evm-downcase)
 (define-key evm-extend-map (kbd "~") #'evm-toggle-case)
 (define-key evm-extend-map (kbd "C-n") #'evm-add-next-match)
+(define-key evm-extend-map (kbd "<s-down-mouse-1>") #'evm--mouse-down-save-point)
 (define-key evm-extend-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
 ;; Pass " to evil for register selection (e.g. "ay, "ap)
 (define-key evm-extend-map (kbd "\"") #'evil-use-register)
@@ -1064,6 +1066,27 @@ short lines don't degrade the column.")
   (interactive)
   (evm--add-cursor-vertically -1))
 
+(defvar evm--pre-click-point nil
+  "Point position saved before mouse-down, used by click handler.")
+
+(defvar evm--last-point nil
+  "Last known point after each command, tracked via `post-command-hook'.
+Used by `evm--mouse-down-save-point' to get the true cursor position
+because Emacs mouse event dispatch can shift point before our handler runs.")
+
+(defun evm--track-point ()
+  "Save current point for use by mouse click handlers."
+  (setq evm--last-point (point)))
+(add-hook 'post-command-hook #'evm--track-point)
+
+(defun evm--mouse-down-save-point (_event)
+  "Save the true cursor position before mouse event processing.
+Emacs mouse event dispatch can move point before our handler runs,
+so we use `evm--last-point' (saved in `post-command-hook') which
+reflects the real cursor position before the click."
+  (interactive "e")
+  (setq evm--pre-click-point (or evm--last-point (point))))
+
 ;;;###autoload
 (defun evm-add-cursor-at-click (event)
   "Add a cursor at mouse click position, or remove if clicking on existing cursor.
@@ -1075,8 +1098,12 @@ EVENT is the mouse event.
     (when pos
       (unless (evm-active-p)
         (evm-activate)
-        ;; Create first cursor at current point
-        (evm--create-region (point) (point)))
+        ;; Create first cursor at the pre-click position (saved by
+        ;; evm--mouse-down-save-point) rather than (point), because
+        ;; Emacs mouse event processing may have moved point.
+        (let ((orig (or evm--pre-click-point (point))))
+          (evm--create-region orig orig)))
+      (setq evm--pre-click-point nil)
       ;; Check if cursor already exists at this position
       (let ((existing (cl-find-if
                        (lambda (r)
@@ -2794,6 +2821,7 @@ Uses `evm-leader-key' for prefix bindings."
   (define-key evil-normal-state-map (kbd "C-n") #'evm-find-word)
   (define-key evil-normal-state-map (kbd "<C-down>") #'evm-add-cursor-down)
   (define-key evil-normal-state-map (kbd "<C-up>") #'evm-add-cursor-up)
+  (define-key evil-normal-state-map (kbd "<s-down-mouse-1>") #'evm--mouse-down-save-point)
   (define-key evil-normal-state-map (kbd "<s-mouse-1>") #'evm-add-cursor-at-click)
   ;; Reselect last (works when evm is not active)
   (evm--bind-leader evil-normal-state-map "g S" #'evm-reselect-last)

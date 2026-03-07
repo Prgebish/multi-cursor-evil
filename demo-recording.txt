@@ -1,0 +1,40 @@
+Select word under cursor, press C-n to add matches one by one.
+
+  param = red
+  size = large
+  param = green
+  size = small
+  param = blue
+  size = medium
+
+Place cursor, press C-Down to add cursors vertically.
+
+  Alice;     Engineer;
+  Bob;       Designer;
+  Carol;     Manager;
+  Dave;      Analyst;
+  Eve;       DevOps;
+
+Hold Super and click to place cursors anywhere.
+
+  server01  192=168.1.10  active
+  server02  192.168.1.20  active
+  server03  192.168=1.30  active
+  server04  192.168.1.40  active
+  server05  192.168.1=50  active
+
+Yank values with multiple cursors, paste into another location.
+
+  width  = 100
+  height = 200
+  depth  = 300
+
+  box(0, 0, 0)
+
+Run ex command at cursor lines only, leaving other lines untouched.
+
+  TODO  fix login bug
+  [x]  update README
+  TODO  add unit tests
+  [x]  refactor parser
+  TODO  check memory leak

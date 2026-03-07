@@ -1155,14 +1155,33 @@ and Emacs pushes markers to line-end-position, creating stale overlays."
 ;;; Mouse click tests
 
 (ert-deftest evm-test-add-cursor-at-click-creates-cursor ()
-  "M-click should create cursor at click position."
+  "M-click should create cursor at original point AND at click position."
   (evm-test-with-buffer "foo bar baz"
-    ;; Simulate mouse click at position 5
+    ;; Point is at 1, click at position 5
+    (goto-char 1)
     (let ((event `(mouse-1 (,(selected-window) 5 (0 . 0) 0))))
       (evm-add-cursor-at-click event))
     (should (evm-active-p))
-    ;; First cursor at point (1), second at click position (5)
-    (should (= (evm-region-count) 2))))
+    ;; Two cursors: one at original point (1) and one at click position (5)
+    (should (= (evm-region-count) 2))
+    (should (= (evm-test-leader-pos) 5))))
+
+(ert-deftest evm-test-add-cursor-at-click-uses-pre-click-point ()
+  "First click should use saved pre-click point even if point moved."
+  (evm-test-with-buffer "foo bar baz"
+    ;; Simulate: point was at 1, mouse-down saved it, then point moved to 5
+    (goto-char 1)
+    (setq evm--pre-click-point 1)
+    (goto-char 5) ;; Emacs mouse processing moved point
+    (let ((event `(mouse-1 (,(selected-window) 9 (0 . 0) 0))))
+      (evm-add-cursor-at-click event))
+    (should (evm-active-p))
+    ;; First cursor at pre-click-point (1), second at click pos (9)
+    (should (= (evm-region-count) 2))
+    (let ((positions (mapcar #'evm--region-cursor-pos
+                             (evm-state-regions evm--state))))
+      (should (member 1 positions))
+      (should (member 9 positions)))))
 
 (ert-deftest evm-test-add-cursor-at-click-removes-existing ()
   "M-click on existing cursor should remove it (toggle behavior)."
