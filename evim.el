@@ -69,7 +69,7 @@ Call `evim-rebind-leader' after changing to update all keymaps."
   :group 'evim)
 
 (defcustom evim-show-mode-line t
-  "When non-nil, show EVM indicator in the mode-line."
+  "When non-nil, show EVIM indicator in the mode-line."
   :type 'boolean
   :group 'evim)
 
@@ -187,7 +187,7 @@ Call `evim-rebind-leader' after changing to update all keymaps."
   "Leader suffixes bound in `evil-visual-state-map'.")
 
 (defvar evim--previous-leader-key evim-leader-key
-  "Most recently bound EVM leader key.")
+  "Most recently bound EVIM leader key.")
 
 ;; Leader-prefixed commands (defined via evim--bind-leader)
 (defun evim--bind-leader (keymap suffix command)
@@ -634,7 +634,7 @@ We adjust all markers the same way."
 
 (defun evim--finalize-batch-edit (&optional update-keymap)
   "Finalize a batched buffer edit and resynchronize UI state.
-When UPDATE-KEYMAP is non-nil, refresh the active EVM keymap too."
+When UPDATE-KEYMAP is non-nil, refresh the active EVIM keymap too."
   (evim--clamp-markers)
   (evim--check-and-merge-overlapping)
   (evim--update-all-overlays)
@@ -2029,7 +2029,7 @@ Examples: dw (delete word), d3w (delete 3 words), dd (delete line).
 Special: ds + char deletes surround (evil-surround integration)."
   (interactive "P")
   (when (evim-cursor-mode-p)
-    (message "[EVM] d")
+    (message "[EVIM] d")
     ;; Peek next char - if 's', delegate to surround
     (let ((char (read-char)))
       (if (= char ?s)
@@ -2045,7 +2045,7 @@ Examples: cw (change word), ciw (change inner word), cc (change line).
 Special: cs + old + new changes surround (evil-surround integration)."
   (interactive "P")
   (when (evim-cursor-mode-p)
-    (message "[EVM] c")
+    (message "[EVIM] c")
     ;; Peek next char - if 's', delegate to surround
     (let ((char (read-char)))
       (if (= char ?s)
@@ -2065,7 +2065,7 @@ Examples: yw (yank word), yiw (yank inner word), yy (yank line).
 Special: ys + motion + char adds surround (evil-surround integration)."
   (interactive "P")
   (when (evim-cursor-mode-p)
-    (message "[EVM] y")
+    (message "[EVIM] y")
     ;; Peek next char - if 's', delegate to surround
     (let ((char (read-char)))
       (if (= char ?s)
@@ -2249,7 +2249,7 @@ COUNT is optional prefix argument.
 Examples: >j (indent 2 lines), >> (indent current line), >ip (indent paragraph)."
   (interactive "P")
   (when (evim-cursor-mode-p)
-    (message "[EVM] >")
+    (message "[EVIM] >")
     (evim--run-indent-operator 'indent count ?>)))
 
 (defun evim-operator-outdent (count)
@@ -2259,7 +2259,7 @@ Examples: <j (outdent 2 lines), << (outdent current line),
 <ip (outdent paragraph)."
   (interactive "P")
   (when (evim-cursor-mode-p)
-    (message "[EVM] <")
+    (message "[EVIM] <")
     (evim--run-indent-operator 'outdent count ?<)))
 
 ;;; Case change operators (gu, gU, g~)
@@ -2345,7 +2345,7 @@ Examples: guw (lowercase word), guiw (lowercase inner word),
 guu (lowercase line)."
   (interactive "P")
   (when (evim-cursor-mode-p)
-    (message "[EVM] gu")
+    (message "[EVIM] gu")
     (evim--run-case-operator #'downcase-region count ?u)))
 
 (defun evim-operator-upcase (count)
@@ -2355,7 +2355,7 @@ Examples: gUw (uppercase word), gUiw (uppercase inner word),
 gUU (uppercase line)."
   (interactive "P")
   (when (evim-cursor-mode-p)
-    (message "[EVM] gU")
+    (message "[EVIM] gU")
     (evim--run-case-operator #'upcase-region count ?U)))
 
 (defun evim-operator-toggle-case (count)
@@ -2365,7 +2365,7 @@ Examples: g~w (toggle case word), g~iw (toggle case inner word),
 g~~ (toggle case line)."
   (interactive "P")
   (when (evim-cursor-mode-p)
-    (message "[EVM] g~")
+    (message "[EVIM] g~")
     (evim--run-case-operator #'evim--toggle-case-region count ?~)))
 
 ;;; Visual mode cursor selection (Phase 9.1)
@@ -2690,7 +2690,7 @@ Examples: ysiw\" (surround word with \"), ys$) (surround to eol with parens)."
   (unless (evim--surround-available-p)
     (user-error "Evil-surround is not loaded"))
   (when (evim-cursor-mode-p)
-    (message "[EVM] ys")
+    (message "[EVIM] ys")
     (evim--run-surround-operator count)))
 
 (defun evim--run-surround-operator (&optional prefix-count)
@@ -2753,7 +2753,7 @@ Reads a surround character and deletes the pair around each cursor."
   (unless (evim--surround-available-p)
     (user-error "Evil-surround is not loaded"))
   (when (evim-cursor-mode-p)
-    (message "[EVM] ds")
+    (message "[EVIM] ds")
     (let ((char (read-char "Delete surround: ")))
       (when (= char 27)  ; ESC
         (message "Cancelled")
@@ -2781,7 +2781,7 @@ Reads old and new surround characters and changes the pair around each cursor."
   (unless (evim--surround-available-p)
     (user-error "Evil-surround is not loaded"))
   (when (evim-cursor-mode-p)
-    (message "[EVM] cs")
+    (message "[EVIM] cs")
     (let ((old-char (read-char "Change surround: ")))
       (when (= old-char 27)  ; ESC
         (message "Cancelled")

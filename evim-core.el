@@ -839,7 +839,7 @@ COUNT defaults to 1.  Cursor lands one position after the character."
            (restricted (evim--restrict-active-p))
            (multiline (evim-state-multiline-p evim--state)))
       (propertize
-       (format " EVM[%s %d/%d%s%s]"
+       (format " EVIM[%s %d/%d%s%s]"
                (if (eq mode 'cursor) "C" "E")
                leader-idx
                count
