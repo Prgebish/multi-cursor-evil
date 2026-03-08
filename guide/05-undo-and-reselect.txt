@@ -35,14 +35,14 @@ C-r redoes it. Both can be repeated.
 Lesson 2: Reselect Last (\ g S)
 ----------------------------------
 
-After exiting evm, \ g S brings back the last cursor
+After exiting evim, \ g S brings back the last cursor
 positions. Useful when you finish one edit and realize
 you need another change at the same spots.
 
 > Edit, exit, reselect, edit again:
   1. Cursor on "1" line 1, C-Down twice
   2. r0 -- all values become 0
-  3. Esc -- exit evm
+  3. Esc -- exit evim
   4. \ g S -- cursors restored at same positions
   5. r5 -- all values become 5
 

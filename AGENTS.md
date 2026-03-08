@@ -24,7 +24,7 @@ This file provides guidance to Codex when working with this repository.
 - `make compile`
 
 ## Manual Verification for Tutorial Changes
-- Open the edited `tutorial/*.txt` files in Emacs with `evil` and `evm` loaded.
+- Open the edited `tutorial/*.txt` files in Emacs with `evil` and `evim` loaded.
 - Run the key sequences described in the lesson text.
 - Confirm that examples stay short, self-contained, and still work as manual regression tests.
 

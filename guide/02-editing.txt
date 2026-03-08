@@ -10,7 +10,7 @@ Lesson 1: Insert Mode (i / a / I / A / o / O)
 -----------------------------------------------
 
 Insert mode works from cursor mode. What you type appears
-at ALL cursors. Esc returns to cursor mode (not exiting evm).
+at ALL cursors. Esc returns to cursor mode (not exiting evim).
 
   i / a  -- insert before / after cursor
   I / A  -- insert at line start / line end
@@ -174,7 +174,7 @@ values cycle.
 
 > Copy sizes into the function call:
   1. Cursor on "1" of "10" line 1, C-Down twice, yiw
-  2. Esc to exit evm
+  2. Esc to exit evim
   3. C-n on "0" in "size(0, 0, 0)", press n twice
   4. p -- each "0" replaced with its value
 
@@ -380,7 +380,7 @@ Spacing: ( [ { add spaces inside, ) ] } don't.
 > Wrap variable names in quotes (extend mode S):
   1. C-n on "name" below, n twice (3 selections)
   2. Press S then double-quote -- selections wrapped in ""
-  After S, evm switches to cursor mode automatically.
+  After S, evim switches to cursor mode automatically.
 
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   name = Alice

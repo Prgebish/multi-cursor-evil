@@ -19,7 +19,7 @@
   - [x] 2.5 Спроектировать визуальное отображение (faces, overlays)
 
 - [x] Phase 3: Core Implementation
-  - [x] 3.1 Базовая структура пакета (evm.el — evil-visual-multi)
+  - [x] 3.1 Базовая структура пакета (evim.el — evil-visual-multi)
   - [x] 3.2 Система курсоров и overlays
   - [x] 3.3 Cursor mode — базовые операции
   - [x] 3.4 Extend mode — базовые операции
@@ -55,7 +55,7 @@
 
   - [x] 8.1 Инфраструктура операторов
     - [x] Парсер motions (single: h,j,k,l,w,e,b,$,^,0; double: i,a,f,t,g + char)
-    - [x] Функция `evm--run-operator-with-motion` — выполнить оператор на всех курсорах
+    - [x] Функция `evim--run-operator-with-motion` — выполнить оператор на всех курсорах
     - [x] Поддержка counts (d3w, 2dw)
 
   - [x] 8.2 Delete operator (d)
@@ -121,7 +121,7 @@
 
 
 ## Blocked / Open Questions
-- [ ] Название пакета: evil-visual-multi? evm? multi-cursor-evil?
+- [ ] Название пакета: evil-visual-multi? evim? multi-cursor-evil?
 - [ ] Лицензия: GPL-3+?
 - [ ] Держать ли VM registers и surround в основной части tutorial или сделать их "advanced editing" appendix?
 
@@ -155,7 +155,7 @@
 - Overlay updates: переиспользование через `move-overlay` вместо пересоздания
 - Buffer scan: убрано сканирование всего буфера в обычных операциях
 - Region sorting: binary insert O(n) вместо full sort O(n log n)
-- Batch creation: `evm--create-regions-batch` для Select All
+- Batch creation: `evim--create-regions-batch` для Select All
 - O(1) duplicate check: hash-table вместо cl-find-if
 
 ### Результаты тестирования (11.2)
@@ -175,9 +175,9 @@
   - Undo/Redo — работает в интерактивном режиме
 
 Реализовано:
-- `evm-core.el` — структуры данных, overlays, базовые операции, restrict to region
-- `evm.el` — entry point, keymaps, minor mode, команды
-- `test/evm-test.el` — 146 ERT тестов
+- `evim-core.el` — структуры данных, overlays, базовые операции, restrict to region
+- `evim.el` — entry point, keymaps, minor mode, команды
+- `test/evim-test.el` — 146 ERT тестов
 - Cursor mode: движение, i/a/I/A/o/O, x/X/r/~
 - Extend mode: y/d/c/p/P, U/u/~, o (flip)
 - Переключение режимов: Tab

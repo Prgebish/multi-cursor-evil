@@ -3,10 +3,10 @@
 ## Error Log
 
 ### 2026-01-16: Keybindings не работают после перезагрузки Emacs
-**Симптом:** `n` после `C-n` вызывает `evil-ex-search-next` вместо `evm-find-next`.
+**Симптом:** `n` после `C-n` вызывает `evil-ex-search-next` вместо `evim-find-next`.
 **Причина:** Устаревшие `.elc` файлы. Emacs загружает скомпилированную версию без последних исправлений.
 **Решение:** `make clean` или `rm *.elc` перед перезагрузкой модулей.
-**Исправление в коде:** `evm--update-keymap` теперь всегда удаляет и заново добавляет `evm--emulation-alist` в начало `emulation-mode-map-alists`, чтобы гарантировать приоритет над evil.
+**Исправление в коде:** `evim--update-keymap` теперь всегда удаляет и заново добавляет `evim--emulation-alist` в начало `emulation-mode-map-alists`, чтобы гарантировать приоритет над evil.
 
 ### 2026-01-16: Курсоры в неконсистентных позициях после undo
 **Симптом:** После `C-n`, `n`, `c`, ввод текста, `Esc`, `u`, `u` — курсоры оказываются в разных частях слов (один в начале, другой в конце), хотя должны быть в одинаковых позициях.
@@ -16,7 +16,7 @@
 (memq this-command '(undo evil-undo undo-tree-undo undo-fu-only-undo))
 ```
 
-**Причина 2:** Функция `evm--resync-regions-to-pattern` требовала точного совпадения количества matches и регионов. Если в буфере 10 "text", а выделено 2 — resync не срабатывал.
+**Причина 2:** Функция `evim--resync-regions-to-pattern` требовала точного совпадения количества matches и регионов. Если в буфере 10 "text", а выделено 2 — resync не срабатывал.
 **Решение 2:** Убрали проверку `(= (length matches) num-regions)`.
 
 **Причина 3:** После первого undo (удаление вставленного текста, но до восстановления оригинала) resync находил ближайшие matches и прыгал на них — даже если это были совсем другие вхождения слова.
@@ -126,7 +126,7 @@
 2. При undo: `activate-cursor-for-undo` восстанавливает fake cursor
 3. После undo: `deactivate-cursor-after-undo` создаёт новый fake cursor
 
-#### Рекомендация для evm
+#### Рекомендация для evim
 - Сохранять снапшоты состояния (позиции всех курсоров) перед изменениями
 - При undo восстанавливать курсоры из снапшота
 - Использовать `buffer-undo-list` для записи восстановительных функций
@@ -156,14 +156,14 @@ evil-surround-pairs-alist
 ;;   ...)
 ```
 
-#### Интеграция для evm
+#### Интеграция для evim
 ```elisp
-(defun evm-surround (char)
+(defun evim-surround (char)
   "Окружить все регионы символом CHAR."
-  (dolist (region (evm-get-all-regions))
+  (dolist (region (evim-get-all-regions))
     (evil-surround-region
-      (evm-region-beg region)
-      (evm-region-end region)
+      (evim-region-beg region)
+      (evim-region-end region)
       'inclusive
       char)))
 ```
@@ -195,26 +195,26 @@ R.vcol    ; вертикальная колонка для j/k
 ## Performance Optimizations (Phase 11.3)
 
 ### 2026-01-19: Overlay Updates Optimization
-**Проблема:** `evm--update-all-overlays` вызывалась после каждого движения и пересоздавала все overlays.
+**Проблема:** `evim--update-all-overlays` вызывалась после каждого движения и пересоздавала все overlays.
 **Решение:** Новая версия переиспользует существующие overlays через `move-overlay`, создаёт новые только когда нужно.
 **Результат:** O(n) move vs O(n) delete + O(n) create.
 
 ### 2026-01-19: Buffer Scan Optimization
-**Проблема:** `evm--remove-all-overlays` сканировала весь буфер `(overlays-in (point-min) (point-max))`.
+**Проблема:** `evim--remove-all-overlays` сканировала весь буфер `(overlays-in (point-min) (point-max))`.
 **Решение:** Разделили на две функции:
-- `evm--remove-all-overlays` — быстрая, работает только с tracked overlays
-- `evm--remove-all-overlays-thorough` — полная очистка при exit
+- `evim--remove-all-overlays` — быстрая, работает только с tracked overlays
+- `evim--remove-all-overlays-thorough` — полная очистка при exit
 
 ### 2026-01-19: Region Sorting Optimization
-**Проблема:** При каждом `evm--create-region` вызывался полный sort O(n log n).
-**Решение:** Добавили `evm--insert-region-sorted` — вставка в отсортированный список O(n).
+**Проблема:** При каждом `evim--create-region` вызывался полный sort O(n log n).
+**Решение:** Добавили `evim--insert-region-sorted` — вставка в отсортированный список O(n).
 
 ### 2026-01-19: Batch Region Creation
-**Проблема:** `evm-select-all` вызывала `evm--create-region` в цикле — каждый раз sort + overlay.
-**Решение:** Добавили `evm--create-regions-batch` — собирает все позиции, сортирует один раз, создаёт overlays batch.
+**Проблема:** `evim-select-all` вызывала `evim--create-region` в цикле — каждый раз sort + overlay.
+**Решение:** Добавили `evim--create-regions-batch` — собирает все позиции, сортирует один раз, создаёт overlays batch.
 
 ### 2026-01-19: O(1) Duplicate Check in Select All
-**Проблема:** `evm-select-all` использовала `cl-find-if` O(n) для проверки дубликатов.
+**Проблема:** `evim-select-all` использовала `cl-find-if` O(n) для проверки дубликатов.
 **Решение:** Используем hash-table для O(1) lookup.
 
 ---

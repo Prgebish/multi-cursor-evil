@@ -1,14 +1,14 @@
 EVM Guide 01: Creating Cursors and Navigation
 ===============================================
 
-Open this file in Emacs with evil-mode and evm loaded.
-Practice on the text between ~~~~ lines. Esc exits evm.
+Open this file in Emacs with evil-mode and evim loaded.
+Practice on the text between ~~~~ lines. Esc exits evim.
 
 
 Lesson 1: Find Word (C-n) and Adding Matches
 ----------------------------------------------
 
-C-n on a word enters evm and selects it. Other occurrences
+C-n on a word enters evim and selects it. Other occurrences
 are shown as dim previews. Press C-n (or n) to add the next
 match; N adds the previous one.
 

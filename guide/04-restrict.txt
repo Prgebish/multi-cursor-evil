@@ -7,7 +7,7 @@ restrict command limits the search to a specific region.
   \ r  = toggle restriction (set or clear)
 
 Set: select a region in visual mode, then press \ r.
-Clear: press \ r while evm is active with a restriction.
+Clear: press \ r while evim is active with a restriction.
 The restricted area is highlighted with an overlay.
 
 
@@ -45,7 +45,7 @@ Lesson 1: Restrict Before Search
 Lesson 2: Clear Restriction (\ r)
 ------------------------------------
 
-Press \ r again (without visual selection) while evm is
+Press \ r again (without visual selection) while evim is
 active to clear the restriction. After clearing, n finds
 matches in the entire buffer again.
 
@@ -101,5 +101,5 @@ Rename a variable in one function without touching the rest.
 
   Quick reference:
     \ r in visual mode  = set restriction
-    \ r in evm mode     = clear restriction
+    \ r in evim mode     = clear restriction
     Restriction limits C-n, n, and N searches

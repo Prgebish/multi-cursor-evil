@@ -10,14 +10,14 @@ test:
 		(require 'package) \
 		(package-initialize) \
 		(add-to-list 'load-path \"$(CURDIR)\") \
-		(when (featurep 'evm-test) (unload-feature 'evm-test t)) \
-		(when (featurep 'evm-themes) (unload-feature 'evm-themes t)) \
-		(when (featurep 'evm) (unload-feature 'evm t)) \
-		(when (featurep 'evm-core) (unload-feature 'evm-core t)) \
-		(load-file \"$(CURDIR)/evm-core.el\") \
-		(load-file \"$(CURDIR)/evm-themes.el\") \
-		(load-file \"$(CURDIR)/evm.el\") \
-		(load-file \"$(CURDIR)/test/evm-test.el\") \
+		(when (featurep 'evim-test) (unload-feature 'evim-test t)) \
+		(when (featurep 'evim-themes) (unload-feature 'evim-themes t)) \
+		(when (featurep 'evim) (unload-feature 'evim t)) \
+		(when (featurep 'evim-core) (unload-feature 'evim-core t)) \
+		(load-file \"$(CURDIR)/evim-core.el\") \
+		(load-file \"$(CURDIR)/evim-themes.el\") \
+		(load-file \"$(CURDIR)/evim.el\") \
+		(load-file \"$(CURDIR)/test/evim-test.el\") \
 		(let ((stats (ert-run-tests-batch))) \
 			(message \"Tests: %d passed, %d failed\" \
 				(ert-stats-completed-expected stats) \
@@ -32,7 +32,7 @@ test-batch:
 		--eval "$(PACKAGE_INIT)" \
 		-L . \
 		-l ert \
-		-l test/evm-test.el \
+		-l test/evim-test.el \
 		-f ert-run-tests-batch-and-exit
 
 # Byte-compile
@@ -41,7 +41,7 @@ compile:
 		--eval "$(PACKAGE_INIT)" \
 		-L . \
 		-f batch-byte-compile \
-		evm-core.el evm-themes.el evm.el
+		evim-core.el evim-themes.el evim.el
 
 # Clean compiled files
 clean:
@@ -53,12 +53,12 @@ test-verbose:
 		--eval "$(PACKAGE_INIT)" \
 		-L . \
 		-l ert \
-		-l test/evm-test.el \
+		-l test/evim-test.el \
 		--eval "(ert-run-tests-batch-and-exit '(not (tag :slow)))"
 
 # Interactive test (opens Emacs)
 test-interactive:
 	$(EMACS) -Q \
 		-L . \
-		-l test/evm-test.el \
+		-l test/evim-test.el \
 		--eval "(ert t)"
