@@ -2386,7 +2386,7 @@ In visual-char mode: creates a cursor at start and end of selection."
     ;; For visual-line mode, expand to full lines
     (when (eq type 'line)
       (setq beg (save-excursion (goto-char beg) (line-beginning-position))
-            end (save-excursion (goto-char end) (line-end-position) (min (1+ (point)) (point-max)))))
+            end (save-excursion (goto-char end) (min (1+ (line-end-position)) (point-max)))))
     (cond
      ;; Visual block: cursor at block column on each line
      ((eq type 'block)
