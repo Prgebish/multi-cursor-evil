@@ -7,7 +7,7 @@
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1") (evil "1.14.0"))
 ;; Keywords: convenience, emulations
-;; URL: https://github.com/Prgebish/multi-cursor-evil
+;; URL: https://github.com/Prgebish/evim
 
 ;;; Commentary:
 
