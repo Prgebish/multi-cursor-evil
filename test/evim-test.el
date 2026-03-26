@@ -2548,5 +2548,4 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     ;; Should have 3 cursors (lines 2, 3, 4)
     (should (= 3 (length (evim-state-regions evim--state))))))
 
-(provide 'evim-test)
 ;;; evim-test.el ends here
