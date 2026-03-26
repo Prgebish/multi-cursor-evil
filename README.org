@@ -60,7 +60,7 @@ Before the package is on MELPA, install directly from GitHub:
 
 #+begin_src emacs-lisp
 ;; packages.el
-(package! evim :recipe (:host github :repo "chestnykh/multi-cursor-evil"))
+(package! evim :recipe (:host github :repo "Prgebish/evim"))
 #+end_src
 
 ** Manual
@@ -68,7 +68,7 @@ Before the package is on MELPA, install directly from GitHub:
 Clone the repository, add it to =load-path=, and set up keys:
 
 #+begin_src emacs-lisp
-(add-to-list 'load-path "/path/to/multi-cursor-evil")
+(add-to-list 'load-path "/path/to/evim")
 (require 'evim)
 (evim-setup-global-keys)
 #+end_src
