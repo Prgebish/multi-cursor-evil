@@ -1078,7 +1078,7 @@ and Emacs pushes markers to line-end-position, creating stale overlays."
       (let ((pos (marker-position (evim-region-beg region))))
         (save-excursion
           (goto-char pos)
-          (should-not (= pos (line-end-position))))))))
+          (should-not (eolp)))))))
 
 ;;; Restrict to region tests
 

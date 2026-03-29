@@ -694,8 +694,7 @@ or nil if no allowed match exists."
 In normal state, cursor can't be past the last character of a non-empty line."
   (save-excursion
     (goto-char pos)
-    (if (and (= pos (line-end-position))
-             (not (= (line-beginning-position) (line-end-position)))) ; non-empty line
+    (if (and (eolp) (not (bolp)))
         (1- pos)
       pos)))
 

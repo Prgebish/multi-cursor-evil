@@ -349,8 +349,7 @@ because it sorts once and creates overlays in batch."
   (let* ((pos (marker-position (evim-region-beg region)))
          (at-eol (save-excursion
                    (goto-char pos)
-                   (or (= pos (line-end-position))
-                       (= pos (point-max)))))
+                   (eolp)))
          ;; At EOL, don't extend overlay past line end - just cover the position
          (end-pos (if at-eol pos (min (1+ pos) (point-max))))
          (ov (make-overlay pos end-pos nil t nil)))
@@ -460,8 +459,7 @@ Attempts to reuse existing overlays when possible for better performance."
             (let* ((pos (marker-position (evim-region-beg region)))
                    (at-eol (save-excursion
                              (goto-char pos)
-                             (or (= pos (line-end-position))
-                                 (= pos (point-max)))))
+                             (eolp)))
                    (end-pos (if at-eol pos (min (1+ pos) (point-max)))))
               (if (and cursor-ov (overlay-buffer cursor-ov))
                   (progn
