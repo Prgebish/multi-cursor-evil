@@ -9,3 +9,15 @@ vim-visual-multi/
 
 # OS
 .DS_Store
+
+# Internal/dev files
+architecture.md
+notes.md
+task_plan.md
+features.md
+examples.md
+demo-recording.txt
+demo/kap1.mp4
+AGENTS.md
+.gemini-clipboard/
+melpa/
