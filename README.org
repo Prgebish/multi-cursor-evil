@@ -2,6 +2,8 @@
 #+AUTHOR: Vadim Pavlov
 #+OPTIONS: toc:3
 
+[[https://melpa.org/#/evim][https://melpa.org/packages/evim-badge.svg]]
+
 Multiple cursors for evil-mode, inspired by [[https://github.com/mg979/vim-visual-multi][vim-visual-multi]].
 
 [[file:demo/demo.gif]]
