@@ -2570,4 +2570,97 @@ Used for tests that need execute-kbd-macro which doesn't work in temp buffers."
     ;; Should have 3 cursors (lines 2, 3, 4)
     (should (= 3 (length (evim-state-regions evim--state))))))
 
+(ert-deftest evim-test-jump-item ()
+  "% should jump all cursors to matching paren."
+  (evim-test-with-buffer "(foo)\n(bar)"
+    ;; Activate evim and create cursor-mode regions manually on opening parens
+    (evim-activate)
+    (evim--create-region 1 1)   ;; on ( of "(foo)"
+    (evim--create-region 7 7)   ;; on ( of "(bar)"
+    (setf (evim-state-mode evim--state) 'cursor)
+    ;; Verify cursors are on opening parens
+    (let ((before (evim-test-positions)))
+      (should (= (char-after (nth 0 before)) ?\())
+      (should (= (char-after (nth 1 before)) ?\()))
+    ;; Jump to matching paren
+    (evim-jump-item)
+    ;; Both cursors should now be on closing parens
+    (let ((after (evim-test-positions)))
+      (should (= (char-after (nth 0 after)) ?\)))
+      (should (= (char-after (nth 1 after)) ?\))))))
+
+(ert-deftest evim-test-jump-item-reverse ()
+  "% from closing paren should jump to opening paren."
+  (evim-test-with-buffer "(foo)\n(bar)"
+    (evim-activate)
+    (evim--create-region 5 5)   ;; on ) of "(foo)"
+    (evim--create-region 11 11) ;; on ) of "(bar)"
+    (setf (evim-state-mode evim--state) 'cursor)
+    (let ((before (evim-test-positions)))
+      (should (= (char-after (nth 0 before)) ?\)))
+      (should (= (char-after (nth 1 before)) ?\))))
+    (evim-jump-item)
+    (let ((after (evim-test-positions)))
+      (should (= (char-after (nth 0 after)) ?\())
+      (should (= (char-after (nth 1 after)) ?\()))))
+
+(ert-deftest evim-test-jump-item-no-match ()
+  "% on non-matchable char should leave cursor in place."
+  (evim-test-with-buffer "(foo) xyz"
+    (evim-activate)
+    (evim--create-region 1 1)   ;; on (
+    (evim--create-region 7 7)   ;; on x (no match)
+    (setf (evim-state-mode evim--state) 'cursor)
+    (evim-jump-item)
+    (let ((after (evim-test-positions)))
+      ;; First cursor jumped to )
+      (should (= (char-after (nth 0 after)) ?\)))
+      ;; Second cursor stayed on x
+      (should (= (char-after (nth 1 after)) ?x)))))
+
+(ert-deftest evim-test-d-percent-from-open ()
+  "d% from opening paren should delete the full matched group."
+  (evim-test-with-buffer "(foo) bar"
+    (evim-activate)
+    (evim--create-region 1 1)
+    (setf (evim-state-mode evim--state) 'cursor)
+    (let ((range (evim--get-motion-range "%" 1)))
+      (should (equal range '(1 6)))
+      (should (equal (buffer-substring (nth 0 range) (nth 1 range)) "(foo)")))))
+
+(ert-deftest evim-test-d-percent-from-close ()
+  "d% from closing paren should delete the full matched group."
+  (evim-test-with-buffer "(foo) bar"
+    (goto-char 5)
+    (evim-activate)
+    (evim--create-region 5 5)
+    (setf (evim-state-mode evim--state) 'cursor)
+    (let ((range (evim--get-motion-range "%" 1)))
+      (should (equal range '(1 6)))
+      (should (equal (buffer-substring (nth 0 range) (nth 1 range)) "(foo)")))))
+
+(ert-deftest evim-test-d-percent-no-match ()
+  "d% on non-matchable character should not delete anything."
+  (evim-test-with-buffer "foo bar"
+    (goto-char 2)  ;; on 'o'
+    (evim-activate)
+    (evim--create-region 2 2)
+    (setf (evim-state-mode evim--state) 'cursor)
+    (let ((range (evim--get-motion-range "%" 1)))
+      (should (null range)))))
+
+(ert-deftest evim-test-jump-item-extend-mode ()
+  "% in extend mode should expand selection to matching paren."
+  (evim-test-with-buffer "(foo)\n(bar)"
+    (evim-activate)
+    (evim--create-region 1 2)   ;; small region at (
+    (evim--create-region 7 8)   ;; small region at (
+    (setf (evim-state-mode evim--state) 'extend)
+    (evim--update-keymap)
+    (evim-jump-item)
+    ;; Selections should now span to closing parens
+    (let ((regions (evim-get-all-regions)))
+      (should (>= (marker-position (evim-region-end (nth 0 regions))) 5))
+      (should (>= (marker-position (evim-region-end (nth 1 regions))) 11)))))
+
 ;;; evim-test.el ends here

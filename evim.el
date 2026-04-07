@@ -120,6 +120,7 @@ Call `evim-rebind-leader' after changing to update all keymaps."
     (define-key km (kbd "F") #'evim-find-char-backward)
     (define-key km (kbd "T") #'evim-find-char-to-backward)
     (define-key km (kbd "M") #'evim-toggle-multiline)
+    (define-key km (kbd "%") #'evim-jump-item)
     km)
   "Keymap for evim mode (common bindings).")
 
@@ -835,6 +836,11 @@ matches when text hasn't been fully restored by undo."
   (interactive)
   (let ((char (read-char "T ")))
     (evim--move-cursors #'evim--move-find-char-to-backward char 1)))
+
+(defun evim-jump-item ()
+  "Move all cursors to matching paren/bracket (like %)."
+  (interactive)
+  (evim--move-cursors #'evim--move-jump-item))
 
 ;;; Cursor navigation
 
@@ -1847,16 +1853,20 @@ Returns (BEG END) or nil if motion failed."
          (beg (point))
          (beg-line (line-number-at-pos beg))
          end
-         ;; Temporarily disable evim keymaps
+         ;; Save evim state for temporary disable
          (saved-alist evim--emulation-alist)
+         (saved-emulation (copy-sequence emulation-mode-map-alists))
          ;; Check if motion is inclusive
          (first-char (aref motion-keys 0))
          (inclusive-p (memq first-char evim--inclusive-motions))
          ;; Check if this is a word motion (w/W) that shouldn't cross line boundaries
          ;; for delete/change operators (like vim behavior)
          (word-motion-p (memq first-char '(?w ?W))))
+    ;; Temporarily disable evim keymaps and hooks
     (setq evim--emulation-alist nil)
-    ;; Remove post-command-hook temporarily to prevent cursor jumping during macro
+    (setq emulation-mode-map-alists
+          (delq 'evim--emulation-alist emulation-mode-map-alists))
+    (remove-hook 'pre-command-hook #'evim--pre-command t)
     (remove-hook 'post-command-hook #'evim--post-command t)
     (unwind-protect
         (cond
@@ -1882,20 +1892,30 @@ Returns (BEG END) or nil if motion failed."
             (when bounds
               (setq beg (nth 0 bounds)
                     end (nth 1 bounds)))))
+         ;; % motion — call evil-jump-item directly for reliability
+         ((string= motion-keys "%")
+          (let ((orig-pos (point)))
+            (condition-case nil
+                (evil-jump-item)
+              (error nil))
+            ;; Only set end if point actually moved (match found)
+            (unless (= (point) orig-pos)
+              (setq end (point)))
+            (goto-char orig-pos)))
          ;; Regular motions
          (t
           (let ((keys (concat (when (> count 1) (number-to-string count))
-                              motion-keys)))
-            (save-excursion
-              (condition-case nil
-                  (execute-kbd-macro keys)
-                (error nil))
-              (setq end (point))
-              ;; For inclusive motions, include the character at end
-              (when (and inclusive-p (not (eobp)))
-                (setq end (1+ end)))))))
-      ;; Restore evim keymaps and hook
+                              motion-keys))
+                (orig-pos (point)))
+            (condition-case nil
+                (execute-kbd-macro keys)
+              (error nil))
+            (setq end (point))
+            (goto-char orig-pos))))
+      ;; Restore evim keymaps and hooks
       (setq evim--emulation-alist saved-alist)
+      (setq emulation-mode-map-alists saved-emulation)
+      (add-hook 'pre-command-hook #'evim--pre-command nil t)
       (add-hook 'post-command-hook #'evim--post-command nil t))
     ;; Ensure beg <= end
     (when (and beg end)
@@ -1903,6 +1923,9 @@ Returns (BEG END) or nil if motion failed."
         (let ((tmp beg))
           (setq beg end
                 end tmp)))
+      ;; For inclusive motions, include the character at end (the further position)
+      (when (and inclusive-p (< end (point-max)))
+        (setq end (1+ end)))
       ;; For word motions (w/W), don't cross line boundaries - like vim's dw behavior
       ;; If the motion crossed to a different line, limit end to end of original line
       (when (and word-motion-p

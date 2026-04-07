@@ -784,6 +784,14 @@ COUNT defaults to 1.  Cursor lands one position after the character."
           (forward-char 1)  ; land one after the match
         (goto-char start)))))
 
+(defun evim--move-jump-item ()
+  "Jump to matching paren/bracket (like evil %).
+If point is not on a matchable item, stay put."
+  (let ((pos (point)))
+    (condition-case nil
+        (evil-jump-item)
+      (error (goto-char pos)))))
+
 ;;; Match preview (for pattern search)
 
 (defvar-local evim--match-overlays nil
